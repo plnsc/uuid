@@ -73,16 +73,12 @@ __all__ = [
 class Generator:
     """Thread-safe UUIDv7 generator.
 
-    Implements Method 2 (monotonic counter) from RFC 9562 §6.2: rand_a is used
-    as a counter seeded randomly on each new millisecond tick. This guarantees
-    strict lexicographic ordering of UUIDs even when many are generated within
-    the same millisecond. rand_b is always fresh random data.
+    Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
+    on each new millisecond, giving strict lexicographic ordering even within a
+    single millisecond; rand_b is always fresh random data. On counter overflow
+    (> 0xFFF) the timestamp is bumped 1 ms — the "counter rollover" that same
+    section permits.
 
-    When the rand_a counter overflows (> 0xFFF), the millisecond timestamp is
-    artificially incremented by 1 to maintain monotonicity — a permitted
-    "counter rollover" strategy described in RFC 9562 §6.2.
-
-    Usage:
         gen = Generator()
         gen.generate()  # => "018f2e39-59b7-7e82-9c3a-4d5b9e2f1a60"
     """
@@ -95,19 +91,18 @@ class Generator:
         self._seq = 0       # rand_a counter within a millisecond
 
     def generate(self) -> str:
-        """Generate a new UUIDv7 with monotonicity guaranteed within 1 ms.
+        """Generate a UUIDv7, monotonic within 1 ms.
 
-        :return: lowercase UUID string, e.g. "018f2e39-59b7-7e82-..."
+        :return: lowercase UUID string
         """
         with self._lock:
             ms, seq, rand_b = self._next_state()
         return _assemble(ms, seq, rand_b)
 
     def generate_random(self) -> str:
-        """Generate a UUIDv7 using Method 1 — fully random rand_a and rand_b.
+        """Generate a UUIDv7 by Method 1 — fully random rand_a and rand_b.
 
-        Simpler, but does NOT guarantee monotonicity within the same
-        millisecond.
+        Simpler, but NOT monotonic within a millisecond.
         """
         ms = _current_ms()
         rand_a = secrets.randbelow(MAX_RAND_A + 1)
@@ -115,7 +110,7 @@ class Generator:
         return _assemble(ms, rand_a, rand_b)
 
     def generate_bulk(self, n: int) -> list[str]:
-        """Generate a list of `n` monotonically ordered UUIDv7s in one call.
+        """Generate `n` monotonically ordered UUIDv7s.
 
         :param n: number of UUIDs to generate (must be positive)
         :raises ValueError: if `n` is not a positive integer
@@ -136,8 +131,7 @@ class Generator:
 
         if ms > self._last_ms:
             # ── New millisecond: re-seed the counter ─────────────────────────
-            # Seed rand_a with an 11-bit random value (keeps the MSB free so
-            # the counter can increment 2048 times before risking overflow).
+            # An 11-bit seed keeps the MSB free, leaving room for 2048 increments.
             self._seq = secrets.randbelow(1 << (RAND_A_BITS - 1))
             self._last_ms = ms
         else:
@@ -156,16 +150,15 @@ class Generator:
 
 
 def _current_ms() -> int:
-    """Return the current Unix timestamp in whole milliseconds."""
+    """Current Unix timestamp in whole milliseconds."""
     return time.time_ns() // 1_000_000
 
 
 def _assemble(unix_ts_ms: int, rand_a: int, rand_b: int) -> str:
     """Pack all fields into a 128-bit integer and format the UUID string.
 
-    Bit positions (127 = most significant bit, 0 = least significant).
-    Note this is the opposite of the RFC-style ruler in the file header,
-    which numbers bits left to right from 0:
+    Positions below count 127 as the MSB — the opposite of the RFC-style
+    ruler in the file header, which numbers bits from 0 left to right:
 
       [127..80]  unix_ts_ms   (48 bits)
       [79..76]   ver          ( 4 bits)  -> 0b0111
@@ -193,9 +186,9 @@ def _assemble(unix_ts_ms: int, rand_a: int, rand_b: int) -> str:
 
 
 def decode(uuid: str) -> dict[str, Any]:
-    """Decode a UUIDv7 string and return a dict of its constituent fields.
+    """Decode a UUIDv7 string into its constituent fields.
 
-    :param uuid: UUID string (with or without uppercase letters)
+    :param uuid: UUID string, any letter case
     :return: dict with keys:
         "uuid"       (str)      canonical lowercase UUID string
         "version"    (int)      must be 7
@@ -240,7 +233,7 @@ def decode(uuid: str) -> dict[str, Any]:
 
 
 def is_valid(uuid: str) -> bool:
-    """Return True if `uuid` is a well-formed UUIDv7, False otherwise."""
+    """True if `uuid` is a well-formed UUIDv7."""
     try:
         decode(uuid)
         return True
@@ -255,20 +248,17 @@ _default_generator = Generator()
 
 
 def generate() -> str:
-    """Generate a monotonic UUIDv7 using the shared default generator.
-
-    Safe to call from multiple threads.
-    """
+    """Monotonic UUIDv7 from the shared default generator. Thread-safe."""
     return _default_generator.generate()
 
 
 def generate_random() -> str:
-    """Generate a UUIDv7 with fully random rand_a and rand_b (Method 1)."""
+    """UUIDv7 with fully random rand_a and rand_b (Method 1)."""
     return _default_generator.generate_random()
 
 
 def generate_bulk(n: int) -> list[str]:
-    """Generate `n` monotonically ordered UUIDv7s using the default generator."""
+    """`n` monotonically ordered UUIDv7s from the default generator."""
     return _default_generator.generate_bulk(n)
 
 

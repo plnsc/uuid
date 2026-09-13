@@ -8,12 +8,11 @@
 -- Port of uuid_v7.rb / uuid_v7.py — same field layout, same monotonicity
 -- contract. Requires Lua 5.3+ (64-bit integers and bitwise operators).
 --
--- Three things differ from the Ruby and Python ports, forced by the language:
---   * No 128-bit integers, so the UUID is assembled per hex group instead of
---     as one packed number (see `assemble`).
---   * No millisecond wall clock in the stdlib, so `current_ms` probes for
---     luaposix / luasocket and otherwise interpolates (see `current_ms`).
---   * No preemptive threads, so there is no mutex (see `Generator`).
+-- Three language limits force a divergence from the Ruby and Python ports:
+--   * No 128-bit integers — the UUID is assembled per hex group (`assemble`).
+--   * No millisecond wall clock in the stdlib — `current_ms` probes for
+--     luaposix / luasocket, else interpolates.
+--   * No preemptive threads — no mutex (`Generator`).
 --
 -- 128-bit field layout (big-endian, MSB first):
 --
@@ -61,8 +60,8 @@ local MASK_48 = 0xFFFFFFFFFFFF   -- unix_ts_ms, and the low half of rand_b
 local MASK_14 = 0x3FFF           -- the part of rand_b sharing a group with var
 
 -- RFC 9562 §4: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
--- Lua patterns have no alternation or {n} repetition, so the canonical form is
--- spelled out; %x already matches both cases, so this is case-insensitive.
+-- Lua patterns lack alternation and {n} repetition, so the shape is spelled
+-- out. %x matches both cases, making this case-insensitive.
 M.UUID_PATTERN =
   "^(%x%x%x%x%x%x%x%x)%-(%x%x%x%x)%-(%x%x%x%x)%-(%x%x%x%x)%-(%x%x%x%x%x%x%x%x%x%x%x%x)$"
 
@@ -70,17 +69,15 @@ local UUID_PATTERN = M.UUID_PATTERN
 
 -- ── Entropy source ───────────────────────────────────────────────────────────
 
--- Prefer /dev/urandom (a CSPRNG, matching Ruby's SecureRandom and Python's
--- secrets). Lua's math.random is NOT cryptographically secure; it is used only
--- where /dev/urandom cannot be opened, and M.entropy_source says which is live.
+-- Prefer /dev/urandom, a CSPRNG matching Ruby's SecureRandom and Python's
+-- secrets. math.random is NOT cryptographically secure and is used only when
+-- /dev/urandom cannot be opened; M.entropy_source reports which is live.
 local urandom = io.open("/dev/urandom", "rb")
 
 M.entropy_source = urandom and "/dev/urandom" or "math.random (NOT a CSPRNG)"
 
--- Returns `nbits` random bits as a non-negative integer.
---
--- Every caller asks for a power-of-two range, so masking is enough — there is
--- no modulo bias to correct for.
+-- Returns `nbits` random bits as a non-negative integer. Every caller asks
+-- for a power-of-two range, so masking suffices — no modulo bias to correct.
 local function rand_bits(nbits)
   local mask = (1 << nbits) - 1
 
@@ -89,7 +86,7 @@ local function rand_bits(nbits)
     if bytes and #bytes == 8 then
       return string.unpack("<I8", bytes) & mask
     end
-    -- Read failed mid-run: stop trying and fall through to math.random.
+    -- Read failed mid-run: give up and fall through to math.random.
     urandom:close()
     urandom = nil
     M.entropy_source = "math.random (NOT a CSPRNG)"
@@ -100,14 +97,14 @@ end
 
 -- ── Clock ────────────────────────────────────────────────────────────────────
 
--- Lua's stdlib clock (os.time) has one-second resolution, which is too coarse
--- for UUIDv7. Use a real millisecond clock when one is installed; otherwise
--- interpolate within the current second using os.clock, re-anchoring on every
--- os.time tick so the interpolation cannot drift beyond one second.
+-- os.time has one-second resolution, too coarse for UUIDv7. Use a real
+-- millisecond clock when one is installed; otherwise interpolate within the
+-- current second via os.clock, re-anchoring on every os.time tick so drift
+-- stays under one second.
 --
--- Ordering does not depend on this: the generator never emits a timestamp
--- below the last one it used. Only timestamp *accuracy* degrades on the
--- fallback path, and M.clock_source says which path is live.
+-- Ordering never depends on this — the generator never emits a timestamp below
+-- the last one used. Only *accuracy* degrades; M.clock_source reports which
+-- path is live.
 local current_ms
 
 do
@@ -140,8 +137,8 @@ do
         return s * 1000
       end
 
-      -- Clamped: os.clock measures CPU time, so it may outrun or lag wall
-      -- time. Clamping keeps the result inside the second os.time reported.
+      -- os.clock measures CPU time, so it may outrun or lag wall time;
+      -- clamping keeps the result inside the second os.time reported.
       local delta = math.floor((os.clock() - anchor_clock) * 1000)
       if delta < 0 then delta = 0 elseif delta > 999 then delta = 999 end
       return anchor_s * 1000 + delta
@@ -156,9 +153,8 @@ M.current_ms = current_ms
 -- Packs all fields and formats the UUID string.
 --
 -- Ruby and Python build one 128-bit integer; Lua integers are 64-bit, so the
--- value is emitted group by group instead. The groups align with the field
--- boundaries almost exactly — the only field that straddles a group is rand_b,
--- whose top 14 bits share group 4 with the variant:
+-- value is emitted group by group. Groups align with field boundaries except
+-- rand_b, whose top 14 bits share group 4 with the variant:
 --
 --   group 1 (8 hex)  unix_ts_ms[47..16]
 --   group 2 (4 hex)  unix_ts_ms[15..0]
@@ -186,21 +182,17 @@ end
 
 -- UUIDv7 generator.
 --
--- Implements Method 2 (monotonic counter) from RFC 9562 §6.2: rand_a is used
--- as a counter seeded randomly on each new millisecond tick. This guarantees
--- strict lexicographic ordering of UUIDs even when many are generated within
--- the same millisecond. rand_b is always fresh random data.
+-- Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
+-- on each new millisecond, giving strict lexicographic ordering even within a
+-- single millisecond; rand_b is always fresh random data. On counter overflow
+-- (> 0xFFF) the timestamp is bumped 1 ms — the "counter rollover" that same
+-- section permits.
 --
--- When the rand_a counter overflows (> 0xFFF), the millisecond timestamp is
--- artificially incremented by 1 to maintain monotonicity — a permitted
--- "counter rollover" strategy described in RFC 9562 §6.2.
+-- No mutex, unlike the Ruby and Python ports: standard Lua has no preemptive
+-- threads, and next_state never yields, so no coroutine can interleave it. A
+-- preemptive host (OS threads sharing one lua_State) would need external
+-- locking.
 --
--- Unlike the Ruby and Python ports there is no mutex: standard Lua has no
--- preemptive threads, and next_state never yields, so it cannot be interleaved
--- by another coroutine. Under a preemptive host (e.g. an embedding runtime
--- with OS threads sharing one lua_State) it would need external locking.
---
--- Usage:
 --   local gen = uuid_v7.Generator.new()
 --   gen:generate()  -- => "018f2e39-59b7-7e82-9c3a-4d5b9e2f1a60"
 local Generator = {}
@@ -219,8 +211,7 @@ function Generator:next_state()
 
   if ms > self.last_ms then
     -- ── New millisecond: re-seed the counter ─────────────────────────────
-    -- Seed rand_a with an 11-bit random value (keeps the MSB free so the
-    -- counter can increment 2048 times before risking overflow).
+    -- An 11-bit seed keeps the MSB free, leaving room for 2048 increments.
     self.seq     = rand_bits(RAND_A_BITS - 1)
     self.last_ms = ms
   else
@@ -239,22 +230,22 @@ function Generator:next_state()
   return ms, self.seq, rand_bits(M.RAND_B_BITS)
 end
 
--- Generate a new UUIDv7 with monotonicity guaranteed within 1 ms.
+-- Generate a UUIDv7, monotonic within 1 ms.
 --
--- @return string lowercase UUID string, e.g. "018f2e39-59b7-7e82-..."
+-- @return string lowercase UUID string
 function Generator:generate()
   return assemble(self:next_state())
 end
 
--- Generate a UUIDv7 using Method 1 — fully random rand_a and rand_b.
--- Simpler, but does NOT guarantee monotonicity within the same millisecond.
+-- Generate a UUIDv7 by Method 1 — fully random rand_a and rand_b. Simpler,
+-- but NOT monotonic within a millisecond.
 --
 -- @return string
 function Generator:generate_random()
   return assemble(current_ms(), rand_bits(RAND_A_BITS), rand_bits(M.RAND_B_BITS))
 end
 
--- Generate a table of `n` monotonically ordered UUIDv7s in one call.
+-- Generate `n` monotonically ordered UUIDv7s.
 --
 -- @param n integer number of UUIDs to generate (must be positive)
 -- @return table array of strings
@@ -275,9 +266,9 @@ M.Generator = Generator
 
 -- ── Decoder ──────────────────────────────────────────────────────────────────
 
--- Decodes a UUIDv7 string and returns a table of its constituent fields.
+-- Decodes a UUIDv7 string into its constituent fields.
 --
--- @param uuid string UUID string (with or without uppercase letters)
+-- @param uuid string UUID string, any letter case
 -- @return table with keys:
 --   uuid        string  canonical lowercase UUID string
 --   version     integer must be 7
@@ -327,7 +318,7 @@ function M.decode(uuid)
   }
 end
 
--- Returns true if `uuid` is a well-formed UUIDv7, false otherwise.
+-- True if `uuid` is a well-formed UUIDv7.
 --
 -- @param uuid string
 -- @return boolean
@@ -342,21 +333,21 @@ local default_generator = Generator.new()
 
 M.default_generator = default_generator
 
--- Generate a monotonic UUIDv7 using the shared default generator.
+-- Monotonic UUIDv7 from the shared default generator.
 --
 -- @return string
 function M.generate()
   return default_generator:generate()
 end
 
--- Generate a UUIDv7 with fully random rand_a and rand_b (Method 1).
+-- UUIDv7 with fully random rand_a and rand_b (Method 1).
 --
 -- @return string
 function M.generate_random()
   return default_generator:generate_random()
 end
 
--- Generate `n` monotonically ordered UUIDv7s using the default generator.
+-- `n` monotonically ordered UUIDv7s from the default generator.
 --
 -- @param n integer
 -- @return table array of strings
@@ -427,9 +418,9 @@ if modname == nil then
   print("  Sorted?  " .. tostring(ordered))
 
   -- ── Coroutine interleaving test ──────────────────────────────────────────
-  -- Standard Lua has no preemptive threads, so this is the analogue of the
-  -- thread-safety test in the Ruby and Python ports: four coroutines are
-  -- resumed round-robin, interleaving their calls into the shared generator.
+  -- Standard Lua has no preemptive threads, so this stands in for the ports'
+  -- thread-safety test: four coroutines resumed round-robin, interleaving
+  -- their calls into the shared generator.
   rule("Coroutine interleaving: 4 coroutines × 5_000 UUIDs")
   local buckets = {}
   local workers = {}

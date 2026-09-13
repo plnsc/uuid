@@ -49,16 +49,12 @@ module UUIDv7
 
   # Thread-safe UUIDv7 generator.
   #
-  # Implements Method 2 (monotonic counter) from RFC 9562 §6.2:
-  # rand_a is used as a counter seeded randomly on each new millisecond tick.
-  # This guarantees strict lexicographic ordering of UUIDs even when many are
-  # generated within the same millisecond. rand_b is always fresh random data.
+  # Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
+  # on each new millisecond, giving strict lexicographic ordering even within a
+  # single millisecond; rand_b is always fresh random data. On counter overflow
+  # (> 0xFFF) the timestamp is bumped 1 ms — the "counter rollover" that same
+  # section permits.
   #
-  # When the rand_a counter overflows (> 0xFFF), the millisecond timestamp is
-  # artificially incremented by 1 to maintain monotonicity — a permitted
-  # "counter rollover" strategy described in RFC 9562 §6.2.
-  #
-  # Usage:
   #   gen = UUIDv7::Generator.new
   #   gen.generate  # => "018f2e39-59b7-7e82-9c3a-4d5b9e2f1a60"
   class Generator
@@ -68,16 +64,16 @@ module UUIDv7
       @seq     = 0     # rand_a counter within a millisecond
     end
 
-    # Generate a new UUIDv7 with monotonicity guaranteed within 1 ms.
+    # Generate a UUIDv7, monotonic within 1 ms.
     #
-    # @return [String] lowercase UUID string, e.g. "018f2e39-59b7-7e82-..."
+    # @return [String] lowercase UUID string
     def generate
       ms, seq, rand_b = @mutex.synchronize { next_state }
       assemble(ms, seq, rand_b)
     end
 
-    # Generate a UUIDv7 using Method 1 — fully random rand_a and rand_b.
-    # Simpler, but does NOT guarantee monotonicity within the same millisecond.
+    # Generate a UUIDv7 by Method 1 — fully random rand_a and rand_b. Simpler,
+    # but NOT monotonic within a millisecond.
     #
     # @return [String]
     def generate_random
@@ -87,7 +83,7 @@ module UUIDv7
       assemble(ms, rand_a, rand_b)
     end
 
-    # Generate an array of +n+ monotonically ordered UUIDv7s in one call.
+    # Generate +n+ monotonically ordered UUIDv7s.
     #
     # @param n [Integer] number of UUIDs to generate (must be positive)
     # @return [Array<String>]
@@ -99,7 +95,7 @@ module UUIDv7
 
     private
 
-    # Returns the current Unix timestamp in whole milliseconds.
+    # Current Unix timestamp in whole milliseconds.
     def current_ms
       Process.clock_gettime(Process::CLOCK_REALTIME, :millisecond)
     end
@@ -111,8 +107,7 @@ module UUIDv7
 
       if ms > @last_ms
         # ── New millisecond: re-seed the counter ────────────────────────────
-        # Seed rand_a with an 11-bit random value (keeps the MSB free so the
-        # counter can increment 2048 times before risking overflow).
+        # An 11-bit seed keeps the MSB free, leaving room for 2048 increments.
         @seq     = SecureRandom.random_number(1 << (RAND_A_BITS - 1))
         @last_ms = ms
       else
@@ -134,9 +129,8 @@ module UUIDv7
 
     # Packs all fields into a 128-bit integer and formats the UUID string.
     #
-    # Bit positions (127 = most significant bit, 0 = least significant).
-    # Note this is the opposite of the RFC-style ruler in the file header,
-    # which numbers bits left to right from 0:
+    # Positions below count 127 as the MSB — the opposite of the RFC-style
+    # ruler in the file header, which numbers bits from 0 left to right:
     #
     #   [127..80]  unix_ts_ms   (48 bits)
     #   [79..76]   ver          ( 4 bits)  → 0b0111
@@ -162,9 +156,9 @@ module UUIDv7
 
   # ── Decoder ─────────────────────────────────────────────────────────────────
 
-  # Decodes a UUIDv7 string and returns a Hash of its constituent fields.
+  # Decodes a UUIDv7 string into its constituent fields.
   #
-  # @param uuid [String] UUID string (with or without uppercase letters)
+  # @param uuid [String] UUID string, any letter case
   # @return [Hash] with keys:
   #   :uuid        [String]  canonical lowercase UUID string
   #   :version     [Integer] must be 7
@@ -204,7 +198,7 @@ module UUIDv7
     }
   end
 
-  # Returns true if +uuid+ is a well-formed UUIDv7, false otherwise.
+  # True if +uuid+ is a well-formed UUIDv7.
   #
   # @param uuid [String]
   # @return [Boolean]
@@ -221,22 +215,21 @@ module UUIDv7
   @default_generator = Generator.new
 
   class << self
-    # Generate a monotonic UUIDv7 using the shared default generator.
-    # Safe to call from multiple threads.
+    # Monotonic UUIDv7 from the shared default generator. Thread-safe.
     #
     # @return [String]
     def generate
       @default_generator.generate
     end
 
-    # Generate a UUIDv7 with fully random rand_a and rand_b (Method 1).
+    # UUIDv7 with fully random rand_a and rand_b (Method 1).
     #
     # @return [String]
     def generate_random
       @default_generator.generate_random
     end
 
-    # Generate +n+ monotonically ordered UUIDv7s using the default generator.
+    # +n+ monotonically ordered UUIDv7s from the default generator.
     #
     # @param n [Integer]
     # @return [Array<String>]

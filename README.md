@@ -21,7 +21,7 @@
 
 ## Especificação: RFC 9562
 
-A **RFC 9562** ("Universally Unique IDentifiers (UUIDs)"), publicada pela IETF em **abril de 2024**, **obsoleta a RFC 4122**. Seu Apêndice A traz vetores de teste com exemplos reais para cada versão.
+A **RFC 9562** ("Universally Unique IDentifiers (UUIDs)"), publicada pela IETF em **abril de 2024**, **torna obsoleta a RFC 4122**. Seu Apêndice A traz vetores de teste com exemplos reais para cada versão.
 
 ### Fontes oficiais
 | Formato | Link |
@@ -197,5 +197,5 @@ A entropia vem de `/dev/urandom`. O `math.random` entra só se ele não puder se
 
 ## Referências
 - RFC 9562: https://www.rfc-editor.org/rfc/rfc9562.html
-- RFC 4122 (obsoletada pela RFC 9562): https://www.rfc-editor.org/rfc/rfc4122
+- RFC 4122 (tornada obsoleta pela RFC 9562): https://www.rfc-editor.org/rfc/rfc4122
 - Cópia local para consulta offline: [`specs/rfc9562.txt`](specs/rfc9562.txt) (também em `.pdf` e `.mhtml`)

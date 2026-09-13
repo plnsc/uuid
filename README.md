@@ -2,7 +2,7 @@
 
 ## O que é
 
-**UUID** é um identificador de **128 bits** usado para identificar informações de forma única em sistemas de computação, sem necessidade de uma autoridade central para coordenar sua geração.
+**UUID** é um identificador de **128 bits** que distingue informações de forma única em sistemas de computação, sem necessidade de uma autoridade central para coordenar sua geração.
 
 - **Representação**: 32 caracteres hexadecimais divididos em 5 grupos separados por hífens:
   ```

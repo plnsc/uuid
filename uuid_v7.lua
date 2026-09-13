@@ -1,18 +1,18 @@
 #!/usr/bin/env lua
 -- =============================================================================
--- UUIDv7 — Lua implementation of RFC 9562, Section 5.7
+-- UUIDv7: Lua implementation of RFC 9562, Section 5.7
 -- https://www.rfc-editor.org/rfc/rfc9562#section-5.7
 -- https://datatracker.ietf.org/doc/html/rfc9562
 -- https://en.wikipedia.org/wiki/Universally_unique_identifier
 --
--- Port of uuid_v7.rb / uuid_v7.py — same field layout, same monotonicity
--- contract. Requires Lua 5.3+ (64-bit integers and bitwise operators).
+-- Port of uuid_v7.rb / uuid_v7.py, with the same field layout and
+-- monotonicity contract. Requires Lua 5.3+ (64-bit integers and bitwise operators).
 --
 -- Three language limits force a divergence from the Ruby and Python ports:
---   * No 128-bit integers — the UUID is assembled per hex group (`assemble`).
---   * No millisecond wall clock in the stdlib — `current_ms` probes for
+--   * No 128-bit integers, so the UUID is assembled per hex group (`assemble`).
+--   * No millisecond wall clock in the stdlib, so `current_ms` probes for
 --     luaposix / luasocket, else interpolates.
---   * No preemptive threads — no mutex (`Generator`).
+--   * No preemptive threads, so no mutex (`Generator`).
 --
 -- 128-bit field layout (big-endian, MSB first):
 --
@@ -77,7 +77,7 @@ local urandom = io.open("/dev/urandom", "rb")
 M.entropy_source = urandom and "/dev/urandom" or "math.random (NOT a CSPRNG)"
 
 -- Returns `nbits` random bits as a non-negative integer. Every caller asks
--- for a power-of-two range, so masking suffices — no modulo bias to correct.
+-- for a power-of-two range, so masking suffices, with no modulo bias to correct.
 local function rand_bits(nbits)
   local mask = (1 << nbits) - 1
 
@@ -102,7 +102,7 @@ end
 -- current second via os.clock, re-anchoring on every os.time tick so drift
 -- stays under one second.
 --
--- Ordering never depends on this — the generator never emits a timestamp below
+-- Ordering never depends on this, since the generator never emits a timestamp below
 -- the last one used. Only *accuracy* degrades; M.clock_source reports which
 -- path is live.
 local current_ms
@@ -185,7 +185,7 @@ end
 -- Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
 -- on each new millisecond, giving strict lexicographic ordering even within a
 -- single millisecond; rand_b is always fresh random data. On counter overflow
--- (> 0xFFF) the timestamp is bumped 1 ms — the "counter rollover" that same
+-- (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
 -- section permits.
 --
 -- No mutex, unlike the Ruby and Python ports: standard Lua has no preemptive
@@ -219,7 +219,7 @@ function Generator:next_state()
     self.seq = self.seq + 1
 
     if self.seq > MAX_RAND_A then
-      -- Counter exhausted — bump the virtual clock by 1 ms (RFC 9562 §6.2)
+      -- Counter exhausted, so bump the virtual clock by 1 ms (RFC 9562 §6.2)
       self.last_ms = self.last_ms + 1
       self.seq     = rand_bits(RAND_A_BITS - 1)
     end
@@ -237,7 +237,7 @@ function Generator:generate()
   return assemble(self:next_state())
 end
 
--- Generate a UUIDv7 by Method 1 — fully random rand_a and rand_b. Simpler,
+-- Generate a UUIDv7 by Method 1, with fully random rand_a and rand_b. Simpler,
 -- but NOT monotonic within a millisecond.
 --
 -- @return string
@@ -365,7 +365,7 @@ if modname == nil then
   end
 
   print(string.rep("=", 68))
-  print("  UUIDv7 — RFC 9562 Lua Implementation")
+  print("  UUIDv7: RFC 9562 Lua Implementation")
   print(string.rep("=", 68))
   print("  entropy: " .. M.entropy_source)
   print("  clock:   " .. M.clock_source)
@@ -387,7 +387,7 @@ if modname == nil then
   end
 
   -- ── Bulk & monotonicity ──────────────────────────────────────────────────
-  rule("Bulk generation (10) — monotonicity check")
+  rule("Bulk generation (10): monotonicity check")
   local batch = M.generate_bulk(10)
   for _, u in ipairs(batch) do print("  " .. u) end
 

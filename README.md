@@ -71,11 +71,11 @@ Todo UUID tem 128 bits, com **4 bits de versão** e **2 bits de variante** (a va
 
 ## Como a v7 gera monotonicidade
 
-O timestamp Unix em milissegundos ocupa os **48 bits mais significativos** do UUIDv7 — os primeiros a serem comparados numa ordenação byte a byte (ou lexicográfica em hexadecimal).
+O timestamp Unix em milissegundos ocupa os **48 bits mais significativos** do UUIDv7, os primeiros a serem comparados numa ordenação byte a byte (ou lexicográfica em hexadecimal).
 
 Logo, **ordenar pelo valor bruto já resulta na ordem cronológica de criação**, sem lógica adicional. Os bits aleatórios (`rand_a` e `rand_b`) só desempatam UUIDs do mesmo milissegundo: não alteram a ordem geral, apenas evitam que dois UUIDs do mesmo instante sejam idênticos.
 
-Isso torna a v7 adequada como chave primária, por favorecer índices B-tree — evita a fragmentação que inserções em posições aleatórias causam na v4.
+Isso torna a v7 adequada como chave primária, por favorecer índices B-tree, evitando a fragmentação que inserções em posições aleatórias causam na v4.
 
 > As implementações deste repositório vão além da RFC e garantem ordenação **estrita** mesmo dentro do mesmo milissegundo, usando `rand_a` como contador em vez de bits aleatórios (Método 2, RFC 9562 §6.2). Veja `Generator` e `next_state`.
 
@@ -92,7 +92,7 @@ UUID gerado em **13/09/2026 às 02:26:10.253 UTC**:
 | Campo | Valor hex | Bits | Significado |
 |---|---|---|---|
 | `unix_ts_ms` | `01a098961ecd` | 48 | Timestamp Unix em milissegundos → 13/09/2026 02:26:10.253 UTC |
-| `version` | `7` | 4 | Sempre `7`; é esse nibble, logo após o segundo hífen, que identifica a versão — a forma mais rápida de reconhecê-la só olhando a string |
+| `version` | `7` | 4 | Sempre `7`; é esse nibble, logo após o segundo hífen, que identifica a versão, a forma mais rápida de reconhecê-la só olhando a string |
 | `rand_a` | `b03` | 12 | Bits aleatórios (sem significado especial) |
 | `variant` | `10xx` (primeiro nibble `b` = `1011`) | 2 | Os 2 bits mais significativos do nibble indicam a variante RFC 9562 (`10`); por isso o primeiro caractere desse grupo fica sempre entre `8` e `b` |
 | `rand_b` | `b26376dea2187a4` | 62 | Bits aleatórios; reduzem a chance de colisão entre UUIDs do mesmo milissegundo |
@@ -116,7 +116,7 @@ Três implementações da **v7**, cada uma usando apenas a biblioteca padrão da
 | [`uuid_v7.py`](uuid_v7.py) | Python 3 | `python3 uuid_v7.py` |
 | [`uuid_v7.lua`](uuid_v7.lua) | Lua 5.3+ | `lua uuid_v7.lua` |
 
-Ruby é o original; Python e Lua são ports fiéis — mesmo layout de campos, mesma monotonicidade, mesma saída. São **compatíveis entre si**: um UUID gerado por qualquer uma decodifica de forma idêntica nas outras duas.
+Ruby é o original; Python e Lua são ports fiéis, com o mesmo layout de campos, a mesma monotonicidade e a mesma saída. São **compatíveis entre si**: um UUID gerado por qualquer uma decodifica de forma idêntica nas outras duas.
 
 ### API comum
 
@@ -125,7 +125,7 @@ A mesma superfície nas três, mudando só a grafia:
 | Função | O que faz |
 |---|---|
 | `generate` | Um UUIDv7 monotônico (Método 2, RFC 9562 §6.2) |
-| `generate_random` | Um UUIDv7 com `rand_a` e `rand_b` aleatórios (Método 1) — **não** garante ordenação dentro do mesmo milissegundo |
+| `generate_random` | Um UUIDv7 com `rand_a` e `rand_b` aleatórios (Método 1), que **não** garante ordenação dentro do mesmo milissegundo |
 | `generate_bulk(n)` | `n` UUIDs monotonicamente ordenados |
 | `decode` | Decompõe um UUIDv7 nos seus campos |
 | `valid?` / `is_valid` | `true` se for um UUIDv7 bem formado |
@@ -164,6 +164,6 @@ A entropia vem de `/dev/urandom`; `math.random` entra só se ele não puder ser 
 ---
 
 ## Referências
-- RFC 9562 — https://www.rfc-editor.org/rfc/rfc9562.html
-- RFC 4122 (obsoletada pela RFC 9562) — https://www.rfc-editor.org/rfc/rfc4122
+- RFC 9562: https://www.rfc-editor.org/rfc/rfc9562.html
+- RFC 4122 (obsoletada pela RFC 9562): https://www.rfc-editor.org/rfc/rfc4122
 - Cópia local para consulta offline: [`specs/rfc9562.txt`](specs/rfc9562.txt) (também em `.pdf` e `.mhtml`)

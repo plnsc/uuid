@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # =============================================================================
-# UUIDv7 — Python implementation of RFC 9562, Section 5.7
+# UUIDv7: Python implementation of RFC 9562, Section 5.7
 # https://www.rfc-editor.org/rfc/rfc9562#section-5.7
 # https://datatracker.ietf.org/doc/html/rfc9562
 # https://en.wikipedia.org/wiki/Universally_unique_identifier
 #
-# Port of uuid_v7.rb — same field layout, same monotonicity contract.
+# Port of uuid_v7.rb, with the same field layout and monotonicity contract.
 #
 # 128-bit field layout (big-endian, MSB first):
 #
@@ -76,7 +76,7 @@ class Generator:
     Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
     on each new millisecond, giving strict lexicographic ordering even within a
     single millisecond; rand_b is always fresh random data. On counter overflow
-    (> 0xFFF) the timestamp is bumped 1 ms — the "counter rollover" that same
+    (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
     section permits.
 
         gen = Generator()
@@ -100,7 +100,7 @@ class Generator:
         return _assemble(ms, seq, rand_b)
 
     def generate_random(self) -> str:
-        """Generate a UUIDv7 by Method 1 — fully random rand_a and rand_b.
+        """Generate a UUIDv7 by Method 1, with fully random rand_a and rand_b.
 
         Simpler, but NOT monotonic within a millisecond.
         """
@@ -139,7 +139,7 @@ class Generator:
             self._seq += 1
 
             if self._seq > MAX_RAND_A:
-                # Counter exhausted — bump the virtual clock by 1 ms (§6.2)
+                # Counter exhausted, so bump the virtual clock by 1 ms (§6.2)
                 self._last_ms += 1
                 self._seq = secrets.randbelow(1 << (RAND_A_BITS - 1))
 
@@ -157,7 +157,7 @@ def _current_ms() -> int:
 def _assemble(unix_ts_ms: int, rand_a: int, rand_b: int) -> str:
     """Pack all fields into a 128-bit integer and format the UUID string.
 
-    Positions below count 127 as the MSB — the opposite of the RFC-style
+    Positions below count 127 as the MSB, the opposite of the RFC-style
     ruler in the file header, which numbers bits from 0 left to right:
 
       [127..80]  unix_ts_ms   (48 bits)
@@ -267,7 +267,7 @@ def generate_bulk(n: int) -> list[str]:
 # =============================================================================
 if __name__ == "__main__":
     print("=" * 68)
-    print("  UUIDv7 — RFC 9562 Python Implementation")
+    print("  UUIDv7: RFC 9562 Python Implementation")
     print("=" * 68)
 
     # ── Basic generation ─────────────────────────────────────────────────────
@@ -285,7 +285,7 @@ if __name__ == "__main__":
         print(f"  {k:<12}  {v}")
 
     # ── Bulk & monotonicity ──────────────────────────────────────────────────
-    print("\n── Bulk generation (10) — monotonicity check ────────────────────────")
+    print("\n── Bulk generation (10): monotonicity check ────────────────────────")
     batch = generate_bulk(10)
     for u in batch:
         print(f"  {u}")

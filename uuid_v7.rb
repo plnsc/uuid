@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # =============================================================================
-# UUIDv7 — Ruby implementation of RFC 9562, Section 5.7
+# UUIDv7: Ruby implementation of RFC 9562, Section 5.7
 # https://www.rfc-editor.org/rfc/rfc9562#section-5.7
 # https://datatracker.ietf.org/doc/html/rfc9562
 # https://en.wikipedia.org/wiki/Universally_unique_identifier
@@ -52,7 +52,7 @@ module UUIDv7
   # Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
   # on each new millisecond, giving strict lexicographic ordering even within a
   # single millisecond; rand_b is always fresh random data. On counter overflow
-  # (> 0xFFF) the timestamp is bumped 1 ms — the "counter rollover" that same
+  # (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
   # section permits.
   #
   #   gen = UUIDv7::Generator.new
@@ -72,7 +72,7 @@ module UUIDv7
       assemble(ms, seq, rand_b)
     end
 
-    # Generate a UUIDv7 by Method 1 — fully random rand_a and rand_b. Simpler,
+    # Generate a UUIDv7 by Method 1, with fully random rand_a and rand_b. Simpler,
     # but NOT monotonic within a millisecond.
     #
     # @return [String]
@@ -115,7 +115,7 @@ module UUIDv7
         @seq += 1
 
         if @seq > MAX_RAND_A
-          # Counter exhausted — bump the virtual clock by 1 ms (RFC 9562 §6.2)
+          # Counter exhausted, so bump the virtual clock by 1 ms (RFC 9562 §6.2)
           @last_ms += 1
           @seq      = SecureRandom.random_number(1 << (RAND_A_BITS - 1))
         end
@@ -129,7 +129,7 @@ module UUIDv7
 
     # Packs all fields into a 128-bit integer and formats the UUID string.
     #
-    # Positions below count 127 as the MSB — the opposite of the RFC-style
+    # Positions below count 127 as the MSB, the opposite of the RFC-style
     # ruler in the file header, which numbers bits from 0 left to right:
     #
     #   [127..80]  unix_ts_ms   (48 bits)
@@ -246,7 +246,7 @@ if __FILE__ == $PROGRAM_NAME
   require 'set'
 
   puts "=" * 68
-  puts "  UUIDv7 — RFC 9562 Ruby Implementation"
+  puts "  UUIDv7: RFC 9562 Ruby Implementation"
   puts "=" * 68
 
   # ── Basic generation ─────────────────────────────────────────────────────
@@ -263,7 +263,7 @@ if __FILE__ == $PROGRAM_NAME
   info.each { |k, v| puts "  %-12s  %s" % [k, v] }
 
   # ── Bulk & monotonicity ───────────────────────────────────────────────────
-  puts "\n── Bulk generation (10) — monotonicity check ────────────────────────"
+  puts "\n── Bulk generation (10): monotonicity check ────────────────────────"
   batch = UUIDv7.generate_bulk(10)
   batch.each { |u| puts "  #{u}" }
   sorted = batch.sort

@@ -1,0 +1,27 @@
+# ── Python ───────────────────────────────────────────────────────────────────
+# Created whenever uuid_v7.py is imported as a module (not when run directly).
+__pycache__/
+*.py[cod]
+
+# ── Ruby ─────────────────────────────────────────────────────────────────────
+*.gem
+.bundle/
+vendor/bundle/
+
+# ── Lua ──────────────────────────────────────────────────────────────────────
+# Only relevant if luaposix/luasocket are ever installed locally rather than
+# system-wide; uuid_v7.lua detects them at load time and works without them.
+*.rock
+.luarocks/
+lua_modules/
+
+# ── Compiled artefacts ───────────────────────────────────────────────────────
+*.so
+*.dylib
+
+# ── OS / editor ──────────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~

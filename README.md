@@ -81,6 +81,22 @@ Isso torna a v7 adequada como chave primária, por favorecer índices B-tree, ev
 
 ---
 
+## Segurança e imprevisibilidade
+
+UUID identifica, não autoriza. A RFC é explícita (§8, Security Considerations):
+
+> Implementations SHOULD NOT assume that UUIDs are hard to guess. For example, they MUST NOT be used as security capabilities (identifiers whose mere possession grants access).
+
+Link de reset de senha e ID de sessão pedem um token dedicado. Se o identificador precisa participar de alguma operação de segurança, a RFC recomenda a v4.
+
+Na v7 isso é fácil de ver, porque quase nada nela é secreto: `unix_ts_ms` é o relógio de parede, `version` e `variant` são constantes, e `rand_a` é um contador sequencial (Método 2). Toda a imprevisibilidade está nos 62 bits de `rand_b`.
+
+Daí a RFC recomendar (SHOULD, §6.9) um **CSPRNG**: um gerador em que prever a próxima saída seja computacionalmente inviável mesmo para quem observou as anteriores. Um gerador comum pode ser estatisticamente impecável e ainda assim ter estado interno recuperável a partir de poucas saídas. Recuperado o estado, toda a sequência passada e futura fica determinada: quem viu alguns UUIDs do processo calcula os demais.
+
+As quatro implementações usam CSPRNG. O único caminho degradado está descrito nas particularidades do Lua, adiante.
+
+---
+
 ## Exemplo prático: um UUIDv7 real, campo a campo
 
 UUID gerado em **13/09/2026 às 02:26:10.253 UTC**:
@@ -175,7 +191,7 @@ Lua não tem inteiros de 128 bits, relógio de milissegundos na biblioteca padr�
 - o relógio usa `luaposix`/`luasocket` se instalados; caso contrário, interpola dentro do segundo (a ordenação nunca depende disso, só a precisão do timestamp);
 - não há mutex, porque não há concorrência preemptiva a proteger.
 
-A entropia vem de `/dev/urandom`; `math.random` entra só se ele não puder ser aberto e **não é criptograficamente seguro**. Os campos `entropy_source` e `clock_source` informam qual caminho está ativo.
+A entropia vem de `/dev/urandom`. O `math.random` entra só se ele não puder ser aberto e **não é criptograficamente seguro** (veja *Segurança e imprevisibilidade*); é a exceção prevista em §6.9, "when a suitable CSPRNG is unavailable in the execution environment". Os campos `entropy_source` e `clock_source` informam qual caminho está ativo.
 
 ---
 

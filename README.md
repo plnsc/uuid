@@ -108,27 +108,28 @@ UUID gerado em **13/09/2026 às 02:26:10.253 UTC**:
 
 ## Implementações neste repositório
 
-Três implementações da **v7**, cada uma usando apenas a biblioteca padrão da sua linguagem:
+Quatro implementações da **v7**, cada uma usando apenas a biblioteca padrão da sua linguagem:
 
 | Arquivo | Runtime | Como executar |
 |---|---|---|
 | [`uuid_v7.rb`](uuid_v7.rb) | Ruby | `ruby uuid_v7.rb` |
 | [`uuid_v7.py`](uuid_v7.py) | Python 3 | `python3 uuid_v7.py` |
 | [`uuid_v7.lua`](uuid_v7.lua) | Lua 5.3+ | `lua uuid_v7.lua` |
+| [`uuid_v7.js`](uuid_v7.js) | Node 19+ | `node uuid_v7.js` |
 
-Ruby é o original; Python e Lua são ports fiéis, com o mesmo layout de campos, a mesma monotonicidade e a mesma saída. São **compatíveis entre si**: um UUID gerado por qualquer uma decodifica de forma idêntica nas outras duas.
+Ruby é o original; Python, Lua e JavaScript são ports fiéis, com o mesmo layout de campos, a mesma monotonicidade e a mesma saída. São **compatíveis entre si**: um UUID gerado por qualquer uma decodifica de forma idêntica nas outras três.
 
 ### API comum
 
-A mesma superfície nas três, mudando só a grafia:
+A mesma superfície nas quatro, mudando só a grafia (JavaScript usa camelCase, por ser o idioma da linguagem):
 
 | Função | O que faz |
 |---|---|
 | `generate` | Um UUIDv7 monotônico (Método 2, RFC 9562 §6.2) |
-| `generate_random` | Um UUIDv7 com `rand_a` e `rand_b` aleatórios (Método 1), que **não** garante ordenação dentro do mesmo milissegundo |
-| `generate_bulk(n)` | `n` UUIDs monotonicamente ordenados |
+| `generate_random` / `generateRandom` | Um UUIDv7 com `rand_a` e `rand_b` aleatórios (Método 1), que **não** garante ordenação dentro do mesmo milissegundo |
+| `generate_bulk(n)` / `generateBulk(n)` | `n` UUIDs monotonicamente ordenados |
 | `decode` | Decompõe um UUIDv7 nos seus campos |
-| `valid?` / `is_valid` | `true` se for um UUIDv7 bem formado |
+| `valid?` / `is_valid` / `isValid` | `true` se for um UUIDv7 bem formado |
 
 ```ruby
 require_relative 'uuid_v7'
@@ -145,11 +146,26 @@ local uuid_v7 = require("uuid_v7")
 uuid_v7.generate()      -- => "01a098b0-4138-7405-8dfc-89b4e3c48aa9"
 ```
 
+```javascript
+const uuid_v7 = require("./uuid_v7");
+uuid_v7.generate();     // => "01a098db-9f10-7516-b387-53dd678b03ea"
+```
+
 ### Testes
 
 Não há framework: cada arquivo traz uma demonstração autocontida no final, executada ao rodá-lo diretamente. Ela verifica geração, decodificação, ordenação de 100 000 UUIDs, acesso concorrente e o vetor do Apêndice A.6 da RFC.
 
 > Os resultados saem como `true`/`false` e `✓`/`✗`: o processo **não** retorna código de erro em caso de falha, então é preciso ler a saída.
+
+### Particularidades do JavaScript
+
+JavaScript não tem tipo inteiro, seus números são exatos só até 2^53 e roda num único event loop. As três consequências estão documentadas no cabeçalho de [`uuid_v7.js`](uuid_v7.js):
+
+- a montagem usa `BigInt`, e por isso `decode` devolve `rand_b` (62 bits) como `BigInt`; `unix_ts_ms` (48) e `rand_a` (12) cabem num `Number` e continuam assim;
+- não há mutex, porque só existe um event loop (worker threads recebem isolate e gerador próprios);
+- `generateBulk(3.0)` é aceito, já que `3.0` e `3` são o mesmo valor.
+
+A entropia vem de `crypto.getRandomValues`, sem fallback: ou há CSPRNG, ou o código falha, nunca degradando silenciosamente para `Math.random`.
 
 ### Particularidades do Lua
 

@@ -15,6 +15,11 @@ vendor/bundle/
 .luarocks/
 lua_modules/
 
+# ── JavaScript ───────────────────────────────────────────────────────────────
+# uuid_v7.js has no dependencies; this only guards against a stray install.
+node_modules/
+package-lock.json
+
 # ── Compiled artefacts ───────────────────────────────────────────────────────
 *.so
 *.dylib

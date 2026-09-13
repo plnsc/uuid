@@ -6,6 +6,9 @@
 # https://datatracker.ietf.org/doc/html/rfc9562
 # https://en.wikipedia.org/wiki/Universally_unique_identifier
 #
+# Sibling implementations (uuid_v7.py, uuid_v7.js, uuid_v7.lua) share the same
+# field layout and monotonicity contract.
+#
 # 128-bit field layout (big-endian, MSB first):
 #
 #  0                   1                   2                   3

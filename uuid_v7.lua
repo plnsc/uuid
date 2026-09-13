@@ -5,10 +5,11 @@
 -- https://datatracker.ietf.org/doc/html/rfc9562
 -- https://en.wikipedia.org/wiki/Universally_unique_identifier
 --
--- Port of uuid_v7.rb / uuid_v7.py, with the same field layout and
--- monotonicity contract. Requires Lua 5.3+ (64-bit integers and bitwise operators).
+-- Sibling implementations (uuid_v7.rb, uuid_v7.py, uuid_v7.js) share the same
+-- field layout and monotonicity contract. Requires Lua 5.3+
+-- (64-bit integers and bitwise operators).
 --
--- Three language limits force a divergence from the Ruby and Python ports:
+-- Three language limits force a divergence from the siblings:
 --   * No 128-bit integers, so the UUID is assembled per hex group (`assemble`).
 --   * No millisecond wall clock in the stdlib, so `current_ms` probes for
 --     luaposix / luasocket, else interpolates.
@@ -69,8 +70,8 @@ local UUID_PATTERN = M.UUID_PATTERN
 
 -- ── Entropy source ───────────────────────────────────────────────────────────
 
--- Prefer /dev/urandom, a CSPRNG matching Ruby's SecureRandom and Python's
--- secrets. math.random is NOT cryptographically secure and is used only when
+-- Prefer /dev/urandom, a CSPRNG matching Ruby's SecureRandom, Python's secrets,
+-- and JavaScript's Web Crypto. math.random is NOT cryptographically secure and is used only when
 -- /dev/urandom cannot be opened; M.entropy_source reports which is live.
 local urandom = io.open("/dev/urandom", "rb")
 
@@ -152,8 +153,8 @@ M.current_ms = current_ms
 
 -- Packs all fields and formats the UUID string.
 --
--- Ruby and Python build one 128-bit integer; Lua integers are 64-bit, so the
--- value is emitted group by group. Groups align with field boundaries except
+-- Ruby, Python, and JavaScript build one 128-bit integer; Lua integers are
+-- 64-bit, so the value is emitted group by group. Groups align with field boundaries except
 -- rand_b, whose top 14 bits share group 4 with the variant:
 --
 --   group 1 (8 hex)  unix_ts_ms[47..16]
@@ -188,7 +189,7 @@ end
 -- (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
 -- section permits.
 --
--- No mutex, unlike the Ruby and Python ports: standard Lua has no preemptive
+-- No mutex, unlike the Ruby and Python siblings: standard Lua has no preemptive
 -- threads, and next_state never yields, so no coroutine can interleave it. A
 -- preemptive host (OS threads sharing one lua_State) would need external
 -- locking.
@@ -418,9 +419,9 @@ if modname == nil then
   print("  Sorted?  " .. tostring(ordered))
 
   -- ── Coroutine interleaving test ──────────────────────────────────────────
-  -- Standard Lua has no preemptive threads, so this stands in for the ports'
-  -- thread-safety test: four coroutines resumed round-robin, interleaving
-  -- their calls into the shared generator.
+  -- Standard Lua has no preemptive threads, so this stands in for the Ruby and
+  -- Python thread-safety test: four coroutines resumed round-robin,
+  -- interleaving their calls into the shared generator.
   rule("Coroutine interleaving: 4 coroutines × 5_000 UUIDs")
   local buckets = {}
   local workers = {}

@@ -114,14 +114,14 @@ Quatro implementações da **v7**, cada uma usando apenas a biblioteca padrão d
 |---|---|---|
 | [`uuid_v7.rb`](uuid_v7.rb) | Ruby | `ruby uuid_v7.rb` |
 | [`uuid_v7.py`](uuid_v7.py) | Python 3 | `python3 uuid_v7.py` |
-| [`uuid_v7.lua`](uuid_v7.lua) | Lua 5.3+ | `lua uuid_v7.lua` |
 | [`uuid_v7.js`](uuid_v7.js) | Node 19+ | `node uuid_v7.js` |
+| [`uuid_v7.lua`](uuid_v7.lua) | Lua 5.3+ | `lua uuid_v7.lua` |
 
-Ruby é o original; Python, Lua e JavaScript são ports fiéis, com o mesmo layout de campos, a mesma monotonicidade e a mesma saída. São **compatíveis entre si**: um UUID gerado por qualquer uma decodifica de forma idêntica nas outras três.
+As quatro compartilham o mesmo layout de campos, a mesma monotonicidade e a mesma saída. São **compatíveis entre si**: um UUID gerado por qualquer uma decodifica de forma idêntica nas outras três.
 
 ### API comum
 
-A mesma superfície nas quatro, mudando só a grafia (JavaScript usa camelCase, por ser o idioma da linguagem):
+A mesma superfície nas quatro, mudando só a grafia (JavaScript usa camelCase, seguindo a convenção da linguagem):
 
 | Função | O que faz |
 |---|---|
@@ -141,14 +141,14 @@ import uuid_v7
 uuid_v7.generate()      # => "01a098b0-4477-70b4-9519-f2950ba49ead"
 ```
 
-```lua
-local uuid_v7 = require("uuid_v7")
-uuid_v7.generate()      -- => "01a098b0-4138-7405-8dfc-89b4e3c48aa9"
-```
-
 ```javascript
 const uuid_v7 = require("./uuid_v7");
 uuid_v7.generate();     // => "01a098db-9f10-7516-b387-53dd678b03ea"
+```
+
+```lua
+local uuid_v7 = require("uuid_v7")
+uuid_v7.generate()      -- => "01a098b0-4138-7405-8dfc-89b4e3c48aa9"
 ```
 
 ### Testes

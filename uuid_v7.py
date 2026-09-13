@@ -5,7 +5,8 @@
 # https://datatracker.ietf.org/doc/html/rfc9562
 # https://en.wikipedia.org/wiki/Universally_unique_identifier
 #
-# Port of uuid_v7.rb, with the same field layout and monotonicity contract.
+# Sibling implementations (uuid_v7.rb, uuid_v7.js, uuid_v7.lua) share the same
+# field layout and monotonicity contract.
 #
 # 128-bit field layout (big-endian, MSB first):
 #

@@ -5,11 +5,12 @@
 // https://datatracker.ietf.org/doc/html/rfc9562
 // https://en.wikipedia.org/wiki/Universally_unique_identifier
 //
-// Port of uuid_v7.rb / uuid_v7.py / uuid_v7.lua, with the same field layout
-// and monotonicity contract. CommonJS, so it runs as `node uuid_v7.js` with no
-// package.json. Requires a global Web Crypto (Node 19+) and BigInt (ES2020).
+// Sibling implementations (uuid_v7.rb, uuid_v7.py, uuid_v7.lua) share the same
+// field layout and monotonicity contract. CommonJS, so it runs as
+// `node uuid_v7.js` with no package.json. Requires a global Web Crypto
+// (Node 19+) and BigInt (ES2020).
 //
-// Three language traits shape this port:
+// Three language traits shape this implementation:
 //   * Numbers are IEEE-754 doubles, exact only to 2^53, so packing uses BigInt
 //     and decode returns rand_b as a BigInt (`assemble`, `decode`).
 //   * Single-threaded event loop, so no mutex (`Generator`).
@@ -124,7 +125,7 @@ function assemble(unixTsMs, randA, randB) {
  * (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
  * section permits.
  *
- * No mutex, unlike the Ruby and Python ports: JavaScript runs one event loop
+ * No mutex, unlike the Ruby and Python siblings: JavaScript runs one event loop
  * and nextState contains no await, so nothing can interleave it. Worker
  * threads get their own isolate and their own generator, so they never share
  * this state.
@@ -350,7 +351,7 @@ if (require.main === module) {
 
     // ── Async interleaving test ──────────────────────────────────────────────
     // JavaScript has one event loop, so this stands in for the thread-safety
-    // test in the Ruby and Python ports: four async tasks yield to the
+    // test in the Ruby and Python siblings: four async tasks yield to the
     // microtask queue between calls, interleaving into the shared generator.
     console.log("\n── Async interleaving: 4 tasks × 5_000 UUIDs ───────────────────────");
     const buckets = await Promise.all(

@@ -93,7 +93,7 @@ Na v7 isso é fácil de ver, porque quase nada nela é secreto: `unix_ts_ms` é 
 
 Daí a RFC recomendar (SHOULD, §6.9) um **CSPRNG**: um gerador em que prever a próxima saída seja computacionalmente inviável mesmo para quem observou as anteriores. Um gerador comum pode ser estatisticamente impecável e ainda assim ter estado interno recuperável a partir de poucas saídas. Recuperado o estado, toda a sequência passada e futura fica determinada: quem viu alguns UUIDs do processo calcula os demais.
 
-As quatro implementações usam CSPRNG. O único caminho degradado está descrito nas particularidades do Lua, adiante.
+As seis implementações usam CSPRNG. O único caminho degradado está descrito nas particularidades do Lua, adiante.
 
 ---
 
@@ -124,7 +124,7 @@ UUID gerado em **13/09/2026 às 02:26:10.253 UTC**:
 
 ## Implementações neste repositório
 
-Quatro implementações da **v7**, cada uma usando apenas a biblioteca padrão da sua linguagem:
+Seis implementações da **v7**, cada uma usando apenas a biblioteca padrão da sua linguagem:
 
 | Arquivo | Runtime | Como executar |
 |---|---|---|
@@ -132,12 +132,16 @@ Quatro implementações da **v7**, cada uma usando apenas a biblioteca padrão d
 | [`uuid_v7.py`](uuid_v7.py) | Python 3 | `python3 uuid_v7.py` |
 | [`uuid_v7.js`](uuid_v7.js) | Node 19+ | `node uuid_v7.js` |
 | [`uuid_v7.lua`](uuid_v7.lua) | Lua 5.3+ | `lua uuid_v7.lua` |
+| [`uuid_v7.rs`](uuid_v7.rs) | Rust 1.70+ | `rustc --edition 2021 -O uuid_v7.rs -o uuid_v7_rs && ./uuid_v7_rs` |
+| [`uuid_v7.c`](uuid_v7.c) | C11 + POSIX | `cc -std=c11 -O2 -pthread uuid_v7.c -o uuid_v7_c && ./uuid_v7_c` |
 
-As quatro compartilham o mesmo layout de campos, a mesma monotonicidade e a mesma saída. São **compatíveis entre si**: um UUID gerado por qualquer uma decodifica de forma idêntica nas outras três.
+As seis compartilham o mesmo layout de campos, a mesma monotonicidade e a mesma saída. São **compatíveis entre si**: um UUID gerado por qualquer uma decodifica de forma idêntica nas outras cinco.
+
+Rust e C são os dois casos compilados: não há `Cargo.toml` nem makefile, então o compilador é chamado direto no arquivo, que serve tanto de binário da demonstração quanto de módulo reaproveitável (`mod uuid_v7;` no Rust, `-DUUIDV7_NO_MAIN` no C). Os dois binários têm nomes distintos de propósito, para que compilar um não sobrescreva o outro.
 
 ### API comum
 
-A mesma superfície nas quatro, mudando só a grafia (JavaScript usa camelCase, seguindo a convenção da linguagem):
+A mesma superfície nas seis, mudando só a grafia (JavaScript usa camelCase; C prefixa tudo com `uuidv7_`, por não ter namespaces):
 
 | Função | O que faz |
 |---|---|
@@ -146,6 +150,12 @@ A mesma superfície nas quatro, mudando só a grafia (JavaScript usa camelCase, 
 | `generate_bulk(n)` / `generateBulk(n)` | `n` UUIDs monotonicamente ordenados |
 | `decode` | Decompõe um UUIDv7 nos seus campos |
 | `valid?` / `is_valid` / `isValid` | `true` se for um UUIDv7 bem formado |
+
+No Rust, que não tem exceções, `decode` devolve `Result<Decoded, DecodeError>` e os campos vêm numa struct, não num mapa; `is_valid` é esse `Result` reduzido a booleano.
+
+O campo `timestamp` do Python é o único que pode vir `None`: o `datetime` para no ano 9999, enquanto os 48 bits de `unix_ts_ms` alcançam 10889-08-02. O UUID continua válido, só não tem data representável; as outras cinco imprimem o instante normalmente.
+
+No C, que também não tem exceções, `uuidv7_decode` devolve um código de status e preenche uma struct que **você** fornece. Nada ali aloca: todo produtor escreve num buffer seu de `UUIDV7_SIZE` bytes.
 
 ```ruby
 require_relative 'uuid_v7'
@@ -167,9 +177,28 @@ local uuid_v7 = require("uuid_v7")
 uuid_v7.generate()      -- => "01a098b0-4138-7405-8dfc-89b4e3c48aa9"
 ```
 
+```rust
+mod uuid_v7;            // o arquivo ao lado, compilado junto
+
+fn main() {
+    println!("{}", uuid_v7::generate());   // => "01a0de04-e1d5-7299-a7f3-0322c0e38eed"
+}
+```
+
+```c
+#define UUIDV7_NO_MAIN  /* deixa de fora a main da demonstração */
+#include "uuid_v7.c"
+
+int main(void) {
+    uuidv7_str u;
+    uuidv7_generate(u);
+    printf("%s\n", u);   /* => "01a0df35-f082-72b9-8c47-a9f8c46820ab" */
+}
+```
+
 ### Testes
 
-Não há framework: cada arquivo traz uma demonstração autocontida no final, executada ao rodá-lo diretamente. Ela verifica geração, decodificação, ordenação de 100 000 UUIDs, acesso concorrente e o vetor do Apêndice A.6 da RFC.
+Não há framework: cada arquivo traz uma demonstração autocontida no final, executada ao rodá-lo diretamente (no Rust e no C, ao compilá-lo e executar o binário). Ela verifica geração, decodificação, ordenação de 100 000 UUIDs, acesso concorrente e o vetor do Apêndice A.6 da RFC.
 
 > Os resultados saem como `true`/`false` e `✓`/`✗`: o processo **não** retorna código de erro em caso de falha, então é preciso ler a saída.
 
@@ -192,6 +221,28 @@ Lua não tem inteiros de 128 bits, relógio de milissegundos na biblioteca padr�
 - não há mutex, porque não há concorrência preemptiva a proteger.
 
 A entropia vem de `/dev/urandom`. O `math.random` entra só se ele não puder ser aberto e **não é criptograficamente seguro** (veja *Segurança e imprevisibilidade*); é a exceção prevista em §6.9, "when a suitable CSPRNG is unavailable in the execution environment". Os campos `entropy_source` e `clock_source` informam qual caminho está ativo.
+
+### Particularidades do C
+
+C não tem inteiro de 128 bits no padrão (`__int128` é extensão de compilador), nem exceções, nem strings gerenciadas, nem regex, nem CSPRNG, nem tabela hash, nem mutex portátil. As soluções estão documentadas no cabeçalho de [`uuid_v7.c`](uuid_v7.c):
+
+- o valor é um par de `uint64_t`, e a divisão é exata: a variante fica na fronteira do octeto 8, que é também a metade, então cada half guarda campos inteiros;
+- `uuidv7_decode` devolve `uuidv7_status` e preenche uma struct passada pelo chamador; `uuidv7_strerror` cumpre o papel que nas outras é a mensagem da exceção;
+- quem produz UUID escreve num buffer do chamador (`uuidv7_str`, 36 caracteres mais o terminador), então nada aloca;
+- o lock é `pthread_mutex_t`, porque o `<threads.h>` do C11 é opcional e a libc da Apple não o traz (`__STDC_NO_THREADS__`);
+- o formato é conferido dígito a dígito em `uuidv7_parse`, e a demonstração checa unicidade com `qsort` mais comparação de vizinhos, por não haver tabela hash na biblioteca padrão.
+
+A entropia vem de `/dev/urandom`, sem fallback: faltando o dispositivo, o processo aborta, a mesma postura do Rust e do JavaScript. Isso, mais `clock_gettime` e pthreads, restringe esta implementação a POSIX. O teste de threads é o único do repositório que pode ser verificado por máquina: com `cc -fsanitize=thread` a demonstração roda sem nenhuma corrida detectada.
+
+### Particularidades do Rust
+
+Rust tem `u128` nativo, então a montagem não precisa de `BigInt` nem de grupos separados. As limitações estão do outro lado: a biblioteca padrão não traz CSPRNG, nem regex, nem calendário. As três estão contornadas e documentadas no cabeçalho de [`uuid_v7.rs`](uuid_v7.rs):
+
+- a entropia vem de `/dev/urandom` lido direto, sem fallback (como no JavaScript, não como no Lua): ou há CSPRNG, ou o processo entra em pânico. É o que restringe esta implementação, como a do C, a POSIX;
+- o formato 8-4-4-4-12 é conferido dígito a dígito em `parse_hex128`, no lugar da regex que as outras quatro têm (o C faz o mesmo, pelo mesmo motivo);
+- `decode` devolve o `SystemTime` cru, porque `std` não sabe convertê-lo em data civil; a aritmética de calendário vive em `utc_string`, usada só para imprimir a demonstração.
+
+Sendo compilada, a linguagem também resolve em tempo de build o que as quatro interpretadas decidem em tempo de execução: `rustc` no arquivo produz o binário da demonstração, enquanto `mod uuid_v7;` expõe a API e deixa a `main` de lado. O C faz o mesmo com `-DUUIDV7_NO_MAIN`.
 
 ---
 

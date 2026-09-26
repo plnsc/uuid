@@ -20,6 +20,20 @@ lua_modules/
 node_modules/
 package-lock.json
 
+# ── C ────────────────────────────────────────────────────────────────────────
+# uuid_v7.c is compiled by hand (cc -std=c11 -O2 -pthread uuid_v7.c -o uuid_v7_c),
+# so the binary lands right next to the source. The two compiled siblings use
+# distinct output names on purpose, so building both cannot overwrite either.
+/uuid_v7_c
+*.o
+
+# ── Rust ─────────────────────────────────────────────────────────────────────
+# uuid_v7.rs is compiled by hand (rustc --edition 2021 -O uuid_v7.rs -o uuid_v7_rs).
+/uuid_v7_rs
+*.rs.bk
+target/
+*.dSYM/
+
 # ── Compiled artefacts ───────────────────────────────────────────────────────
 *.so
 *.dylib

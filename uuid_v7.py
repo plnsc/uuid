@@ -5,8 +5,9 @@
 # https://datatracker.ietf.org/doc/html/rfc9562
 # https://en.wikipedia.org/wiki/Universally_unique_identifier
 #
-# Sibling implementations (uuid_v7.rb, uuid_v7.js, uuid_v7.lua) share the same
-# field layout and monotonicity contract.
+# Sibling implementations (uuid_v7.rb, uuid_v7.js, uuid_v7.lua, uuid_v7.rs,
+# uuid_v7.c)
+# share the same field layout and monotonicity contract.
 #
 # 128-bit field layout (big-endian, MSB first):
 #
@@ -186,6 +187,29 @@ def _assemble(unix_ts_ms: int, rand_a: int, rand_b: int) -> str:
 # ── Decoder ──────────────────────────────────────────────────────────────────
 
 
+def _timestamp(unix_ts_ms: int) -> datetime | None:
+    """Convert `unix_ts_ms` to a UTC datetime, or None if it does not fit.
+
+    `datetime` stops at year 9999, but unix_ts_ms is 48 bits and reaches
+    10889-08-02, so the top ~10% of the field (anything above
+    253402300799999) has no datetime at all. The Ruby, JavaScript, Lua, Rust,
+    and C siblings all render those instants fine; this is a Python-only limit.
+
+    Such a UUID is still a well-formed UUIDv7, so returning None keeps `decode`
+    raising only on genuinely invalid input and keeps `is_valid` a predicate:
+    OverflowError is not a ValueError, so letting it escape would make
+    `is_valid` raise instead of answering False. Clamping to `datetime.max`
+    would be worse than None, since it would misreport the instant.
+
+    :param unix_ts_ms: 48-bit millisecond timestamp
+    :return: tz-aware UTC datetime, or None beyond year 9999
+    """
+    try:
+        return _EPOCH + timedelta(milliseconds=unix_ts_ms)
+    except OverflowError:
+        return None
+
+
 def decode(uuid: str) -> dict[str, Any]:
     """Decode a UUIDv7 string into its constituent fields.
 
@@ -195,7 +219,9 @@ def decode(uuid: str) -> dict[str, Any]:
         "version"    (int)      must be 7
         "variant"    (str)      e.g. "0b10"
         "unix_ts_ms" (int)      Unix timestamp in milliseconds
-        "timestamp"  (datetime) UTC datetime reconstructed from unix_ts_ms
+        "timestamp"  (datetime | None) UTC datetime reconstructed from
+                     unix_ts_ms, or None when it lands beyond datetime's range
+                     (see _timestamp)
         "rand_a"     (int)      12-bit rand_a field value
         "rand_b"     (int)      62-bit rand_b field value
     :raises ValueError: if the format, version, or variant is invalid
@@ -227,7 +253,7 @@ def decode(uuid: str) -> dict[str, Any]:
         "version": version,
         "variant": f"0b{variant:02b}",
         "unix_ts_ms": unix_ts_ms,
-        "timestamp": _EPOCH + timedelta(milliseconds=unix_ts_ms),
+        "timestamp": _timestamp(unix_ts_ms),
         "rand_a": rand_a,
         "rand_b": rand_b,
     }
@@ -320,6 +346,7 @@ if __name__ == "__main__":
     examples = [
         (generate(), True),
         ("00000000-0000-7000-8000-000000000000", True),   # minimal valid v7
+        ("ffffffff-ffff-7fff-bfff-ffffffffffff", True),   # max timestamp, year 10889
         ("f81d4fae-7dec-11d0-a765-00a0c91e6bf6", False),  # v1
         ("550e8400-e29b-41d4-a716-446655440000", False),  # v4
         ("not-a-uuid", False),

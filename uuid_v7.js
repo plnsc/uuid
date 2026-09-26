@@ -5,8 +5,9 @@
 // https://datatracker.ietf.org/doc/html/rfc9562
 // https://en.wikipedia.org/wiki/Universally_unique_identifier
 //
-// Sibling implementations (uuid_v7.rb, uuid_v7.py, uuid_v7.lua) share the same
-// field layout and monotonicity contract. CommonJS, so it runs as
+// Sibling implementations (uuid_v7.rb, uuid_v7.py, uuid_v7.lua, uuid_v7.rs,
+// uuid_v7.c)
+// share the same field layout and monotonicity contract. CommonJS, so it runs as
 // `node uuid_v7.js` with no package.json. Requires a global Web Crypto
 // (Node 19+) and BigInt (ES2020).
 //
@@ -57,9 +58,9 @@ const UUID_REGEX =
 
 // ── Entropy source ───────────────────────────────────────────────────────────
 
-// Web Crypto is a CSPRNG, matching Ruby's SecureRandom and Python's secrets.
-// There is no Math.random fallback: it is not cryptographically secure, and
-// failing loudly beats degrading silently. The buffer is reused across calls,
+// Web Crypto is a CSPRNG, matching Ruby's SecureRandom, Python's secrets, and
+// the /dev/urandom that Rust and C read. There is no Math.random fallback: it is not
+// cryptographically secure, and failing loudly beats degrading silently. The buffer is reused across calls,
 // which is safe for the same reason the generator needs no mutex.
 const _buf = new Uint8Array(8);
 
@@ -125,10 +126,10 @@ function assemble(unixTsMs, randA, randB) {
  * (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
  * section permits.
  *
- * No mutex, unlike the Ruby and Python siblings: JavaScript runs one event loop
- * and nextState contains no await, so nothing can interleave it. Worker
- * threads get their own isolate and their own generator, so they never share
- * this state.
+ * No mutex, unlike the Ruby, Python, Rust, and C siblings: JavaScript runs one
+ * event loop and nextState contains no await, so nothing can interleave it.
+ * Worker threads get their own isolate and their own generator, so they never
+ * share this state.
  *
  *   const gen = new Generator();
  *   gen.generate();  // => "018f2e39-59b7-7e82-9c3a-4d5b9e2f1a60"
@@ -351,8 +352,8 @@ if (require.main === module) {
 
     // ── Async interleaving test ──────────────────────────────────────────────
     // JavaScript has one event loop, so this stands in for the thread-safety
-    // test in the Ruby and Python siblings: four async tasks yield to the
-    // microtask queue between calls, interleaving into the shared generator.
+    // test in the Ruby, Python, Rust, and C siblings: four async tasks yield to
+    // the microtask queue between calls, interleaving into the shared generator.
     console.log("\n── Async interleaving: 4 tasks × 5_000 UUIDs ───────────────────────");
     const buckets = await Promise.all(
       Array.from({ length: 4 }, async () => {
@@ -373,6 +374,7 @@ if (require.main === module) {
     const examples = [
       [generate(), true],
       ["00000000-0000-7000-8000-000000000000", true],   // minimal valid v7
+      ["ffffffff-ffff-7fff-bfff-ffffffffffff", true],   // max timestamp, year 10889
       ["f81d4fae-7dec-11d0-a765-00a0c91e6bf6", false],  // v1
       ["550e8400-e29b-41d4-a716-446655440000", false],  // v4
       ["not-a-uuid", false],

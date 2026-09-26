@@ -6,8 +6,9 @@
 # https://datatracker.ietf.org/doc/html/rfc9562
 # https://en.wikipedia.org/wiki/Universally_unique_identifier
 #
-# Sibling implementations (uuid_v7.py, uuid_v7.js, uuid_v7.lua) share the same
-# field layout and monotonicity contract.
+# Sibling implementations (uuid_v7.py, uuid_v7.js, uuid_v7.lua, uuid_v7.rs,
+# uuid_v7.c)
+# share the same field layout and monotonicity contract.
 #
 # 128-bit field layout (big-endian, MSB first):
 #
@@ -294,6 +295,7 @@ if __FILE__ == $PROGRAM_NAME
   examples = {
     UUIDv7.generate                             => true,
     "00000000-0000-7000-8000-000000000000"      => true,   # minimal valid v7
+    "ffffffff-ffff-7fff-bfff-ffffffffffff"      => true,   # max timestamp, year 10889
     "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"      => false,  # v1
     "550e8400-e29b-41d4-a716-446655440000"      => false,  # v4
     "not-a-uuid"                                => false,

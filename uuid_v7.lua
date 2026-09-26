@@ -5,8 +5,9 @@
 -- https://datatracker.ietf.org/doc/html/rfc9562
 -- https://en.wikipedia.org/wiki/Universally_unique_identifier
 --
--- Sibling implementations (uuid_v7.rb, uuid_v7.py, uuid_v7.js) share the same
--- field layout and monotonicity contract. Requires Lua 5.3+
+-- Sibling implementations (uuid_v7.rb, uuid_v7.py, uuid_v7.js, uuid_v7.rs,
+-- uuid_v7.c)
+-- share the same field layout and monotonicity contract. Requires Lua 5.3+
 -- (64-bit integers and bitwise operators).
 --
 -- Three language limits force a divergence from the siblings:
@@ -71,8 +72,9 @@ local UUID_PATTERN = M.UUID_PATTERN
 -- ── Entropy source ───────────────────────────────────────────────────────────
 
 -- Prefer /dev/urandom, a CSPRNG matching Ruby's SecureRandom, Python's secrets,
--- and JavaScript's Web Crypto. math.random is NOT cryptographically secure and is used only when
--- /dev/urandom cannot be opened; M.entropy_source reports which is live.
+-- JavaScript's Web Crypto, and the same device Rust and C read. math.random is NOT
+-- cryptographically secure and is used only when /dev/urandom cannot be opened;
+-- M.entropy_source reports which is live.
 local urandom = io.open("/dev/urandom", "rb")
 
 M.entropy_source = urandom and "/dev/urandom" or "math.random (NOT a CSPRNG)"
@@ -153,9 +155,10 @@ M.current_ms = current_ms
 
 -- Packs all fields and formats the UUID string.
 --
--- Ruby, Python, and JavaScript build one 128-bit integer; Lua integers are
--- 64-bit, so the value is emitted group by group. Groups align with field boundaries except
--- rand_b, whose top 14 bits share group 4 with the variant:
+-- Ruby, Python, JavaScript, and Rust build one 128-bit integer, and C a pair of
+-- them; Lua integers are 64-bit with no unsigned pairing helpers, so the value is
+-- emitted group by group. Groups align with field boundaries except rand_b, whose
+-- top 14 bits share group 4 with the variant:
 --
 --   group 1 (8 hex)  unix_ts_ms[47..16]
 --   group 2 (4 hex)  unix_ts_ms[15..0]
@@ -189,10 +192,10 @@ end
 -- (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
 -- section permits.
 --
--- No mutex, unlike the Ruby and Python siblings: standard Lua has no preemptive
--- threads, and next_state never yields, so no coroutine can interleave it. A
--- preemptive host (OS threads sharing one lua_State) would need external
--- locking.
+-- No mutex, unlike the Ruby, Python, Rust, and C siblings: standard Lua has no
+-- preemptive threads, and next_state never yields, so no coroutine can
+-- interleave it. A preemptive host (OS threads sharing one lua_State) would
+-- need external locking.
 --
 --   local gen = uuid_v7.Generator.new()
 --   gen:generate()  -- => "018f2e39-59b7-7e82-9c3a-4d5b9e2f1a60"
@@ -419,8 +422,8 @@ if modname == nil then
   print("  Sorted?  " .. tostring(ordered))
 
   -- ── Coroutine interleaving test ──────────────────────────────────────────
-  -- Standard Lua has no preemptive threads, so this stands in for the Ruby and
-  -- Python thread-safety test: four coroutines resumed round-robin,
+  -- Standard Lua has no preemptive threads, so this stands in for the Ruby,
+  -- Python, Rust, and C thread-safety test: four coroutines resumed round-robin,
   -- interleaving their calls into the shared generator.
   rule("Coroutine interleaving: 4 coroutines × 5_000 UUIDs")
   local buckets = {}
@@ -463,6 +466,7 @@ if modname == nil then
   local examples = {
     { M.generate(),                          true  },
     { "00000000-0000-7000-8000-000000000000", true  },  -- minimal valid v7
+    { "ffffffff-ffff-7fff-bfff-ffffffffffff", true  },  -- max timestamp, year 10889
     { "f81d4fae-7dec-11d0-a765-00a0c91e6bf6", false },  -- v1
     { "550e8400-e29b-41d4-a716-446655440000", false },  -- v4
     { "not-a-uuid",                           false },

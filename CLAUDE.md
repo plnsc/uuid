@@ -95,6 +95,7 @@ Behavior changes propagate to all six in the same commit. Intentional difference
 
 Keys inside `decode`'s result are RFC field names (`unix_ts_ms`, `rand_a`, `rand_b`) and stay snake_case in every language, JavaScript included.
 
+- `decode` type-guards before matching in all four dynamic languages (`uuid.is_a?(String)`, `isinstance`, `typeof`, `type(uuid) ~= "string"`); Rust and C get it from their signatures, C's `uuidv7_parse` additionally rejecting `NULL`. The guard is not decoration: without it Ruby's non-String path reached `#match?` and raised `NoMethodError`, which `valid?` does not rescue, so the predicate raised instead of answering. Any new entry point takes the same guard.
 - Bulk type checks: Python rejects `bool` explicitly (`True` is an `int`); JavaScript's `Number.isInteger` accepts `3.0`, since the language has no distinct integer type; Lua's `math.type(n) ~= "integer"` rejects it; Rust and C need no check beyond `n == 0`, since `usize` and `size_t` admit nothing else.
 - JavaScript has no entropy fallback by design: `crypto.getRandomValues` or a thrown error, never a silent downgrade to `Math.random`. Worker threads get their own isolate and generator, so they never share the counter.
 - Rust's entropy is also `/dev/urandom`, but with JavaScript's stance rather than Lua's: no fallback, so a missing device panics. That plus the `read(2)` in `rand_bits` is what makes Rust the one Unix-only sibling. The handle is a `OnceLock<File>` and needs no lock of its own, since the kernel serializes each read.

@@ -173,8 +173,13 @@ module UUIDv7
   #   :rand_b      [Integer] 62-bit rand_b field value
   # @raise [ArgumentError] if the format, version, or variant is invalid
   def self.decode(uuid)
+    # The type check comes first for the same reason Python, JavaScript, and Lua
+    # open with theirs: without it a non-String reaches #match? and raises
+    # NoMethodError, which +valid?+ does not rescue, turning the predicate into
+    # a raising method instead of an answer. Rust and C get this from their
+    # signatures.
     raise ArgumentError, "Invalid UUID format: #{uuid.inspect}" \
-      unless uuid.match?(UUID_REGEX)
+      unless uuid.is_a?(String) && uuid.match?(UUID_REGEX)
 
     n = uuid.delete('-').to_i(16)
 

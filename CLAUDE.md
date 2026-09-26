@@ -99,6 +99,17 @@ Three structural approaches, because not every language has a 128-bit integer:
 
 Offsets must stay consistent across the header diagram, `assemble`, and `decode`, **in all six files**.
 
+### String assembly
+
+`assemble` is where the cost sits once entropy is pooled, and the two compiled files handle it differently from the four interpreted ones **on purpose**:
+
+- **Rust and C emit the nibbles themselves**, over `UUID_GROUP_WIDTHS` / a position table. The formatting libraries were the bottleneck: Rust's `format!("{n:032x}")` plus a second `format!` for the hyphens measured 759 ns of an 853 ns `generate`, and C's `snprintf` 245 of 348, both parsing a template at run time. After the change, `generate` is 164 ns in Rust and 105 in C.
+- **The four interpreted siblings keep their format primitive**, because there it is native code while a 32-step loop is not: hand-rolling measured **5.6x slower in Lua**, **6.6x in Python**, **9.7x in Ruby** and **11.8x in JavaScript**. All four say so at `assemble`, each with its own figure; do not "fix" them to match Rust and C.
+
+Rust's remaining ~60 ns behind C is one 36-byte heap allocation, the price of returning an owned `String` as five of the six do, against C writing into the caller's buffer. It is an API difference, not a safety cost, and bounds checking does not show up at all: the iterator spelling beat an index-table spelling (79 ns against 114), both safe.
+
+`is_valid` follows the same split. In Rust it goes through a private `parse_checked` rather than `decode`, since building `Decoded` to drop it cost more than the parse (242 ns against 38); C achieves the same by passing a NULL out-parameter. Validation still lives in one place in both.
+
 ### Cross-language parity
 
 Behavior changes propagate to all six in the same commit. Intentional differences:
@@ -118,6 +129,8 @@ Behavior changes propagate to all six in the same commit. Intentional difference
 | Clock | `Process.clock_gettime(CLOCK_REALTIME, :millisecond)` | `time.time_ns() // 1_000_000` | `Date.now()` | luaposix / luasocket if present, else `os.time` + `os.clock` | `SystemTime::now().duration_since(UNIX_EPOCH)` | `clock_gettime(CLOCK_REALTIME)`, ISO C offering only whole seconds |
 | Concurrency | `Mutex` | `threading.Lock` | none, since there is one event loop | none, since standard Lua has no preemptive threads | `Mutex<State>`, recovering the guard on poisoning | `pthread_mutex_t`, because C11 `<threads.h>` is optional and Apple's libc omits it (`__STDC_NO_THREADS__`) |
 | Packing | one 128-bit integer | one 128-bit integer | one 128-bit `BigInt` | per hex group (64-bit ceiling) | one 128-bit integer (native `u128`) | two `uint64_t`, split at the variant boundary |
+| Formatting | `format` | f-string | template literal | `string.format` | nibbles emitted by hand, no `format!` | nibbles emitted by hand, no `snprintf` |
+| Predicate path | via `decode` | via `decode` | via `decode` | via `decode` | via private `parse_checked` | via `decode` with a NULL out-parameter |
 | `decode` timestamp | `Time` (UTC) | `datetime` (tz-aware UTC), `None` past year 9999 | `Date` | `string`, `"YYYY-MM-DD HH:MM:SS.mmm UTC"` | `SystemTime`, an opaque instant the demo formats itself | `struct tm` (UTC, from `gmtime_r`), the demo adding the milliseconds |
 | `decode` numerics | Integer | `int` | Number, except `rand_b`, a `BigInt` | 64-bit integer | `u64`, except `rand_a`, a `u16`, and `version`/`variant` bits, `u8` | `uint64_t`, except `rand_a`, a `uint16_t`, and `version`, an `unsigned` |
 | `decode` result | `Hash`, Symbol keys | `dict`, `str` keys | plain object with `str` keys | `table` with `str` keys | `Decoded` struct, `pub` fields | `uuidv7_decoded` filled through an out-parameter the caller owns |
@@ -149,7 +162,7 @@ The six are wire-compatible: any UUID decodes identically in the other five. Che
 - Verify spec claims against the vendored `specs/` (`rfc9562.txt`, `.pdf`, `.mhtml`), grepping those instead of fetching the RFC.
 - `README.md` is pt-BR; code and comments are English. Preserve both.
 - The benchmark measures only the **public** API, four operations, one driver per language. An earlier one-off also timed the raw entropy draw, which meant reaching into private internals six different ways; that stayed out on purpose. Its rules, and why each exists, are in `bench/README.md`: timing inside the process, minimum rather than mean, `black_box` in Rust and a `volatile` in C so the optimizer cannot delete the calls, and Lua's column being CPU time because standard Lua has no monotonic wall clock.
-- README's performance table is one machine, one run. Re-measure rather than quoting it, and update both it and the "Entropy pool" figures in the same commit as any change that moves them.
+- README's performance table is one machine, one run. Re-measure rather than quoting it, and update both it and the "Entropy pool" figures in the same commit as any change that moves them. Individual runs are noisy, unevenly by language: one cell repeated nine times spread 6.6% (Rust `generate`), 9.9% (C `decode`) and 34% (Ruby predicate). The `min` of 5 reproduces within a few percent; a single run does not, so raise `reps` before believing a small change.
 - Touching entropy means re-answering the fork question in that language, and re-running its fork test: a pool that outlives a `fork()` makes parent and child emit identical UUIDs, which is the one failure this project exists to avoid. The measured numbers in "Entropy pool" are from `min` of 5 runs at N=100k on one machine; re-measure rather than copying them if the pool changes.
 - C builds must stay warning-free under `cc -std=c11 -Wall -Wextra -pedantic`, which is stricter than the documented compile line; check with it after any edit.
 - Formatting is hand-done in every file, including `uuid_v7.rs`, which is **not** rustfmt-clean: aligned trailing comments and one-line demo prints keep the six readable side by side. `rustfmt` collapses both, so don't run it (the file says so too).
@@ -164,6 +177,7 @@ Each file is meant to read standalone, so facts are duplicated on purpose and ed
 | Bit offsets / field widths | per file: header diagram, the `Field / Bits / Position` table, the comment above `assemble`, the shifts in `assemble` and `decode`, plus README's "Estrutura de bits comparada" |
 | `VERSION`, `VARIANT`, `RAND_A_BITS`, `RAND_B_BITS` | the constants, their inline comments, and doc comments restating `0b0111` / `0b10` / `0xFFF` |
 | Monotonicity strategy | per file: `Generator` doc comment, `next_state` inline comments, `generate` vs `generate_random` docs, plus README's "Como a v7 gera monotonicidade" |
+| The assembly strategy | per file: the comment above `assemble` (and, in Rust and C, its warning not to propagate the hand-rolled writer), CLAUDE.md's "String assembly", and README's "Desempenho" bullets |
 | `decode`'s return shape | per file: the documented key list and the literal it returns (in Rust the `Decoded` struct, in C `uuidv7_decoded`, with their field comments) |
 | The demo script | six main blocks, kept section-for-section parallel |
 | Filenames and API surface | each file's "run with:" comment and header cross-references, README's "Implementações" tables and snippets, the Commands section above |

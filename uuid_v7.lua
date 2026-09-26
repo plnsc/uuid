@@ -191,6 +191,11 @@ M.current_ms = current_ms
 --   group 4 (4 hex)  var (2 bits) + rand_b[61..48] (14 bits)
 --   group 5 (12 hex) rand_b[47..0]
 --
+-- Keep string.format here. uuid_v7.rs and uuid_v7.c emit the nibbles by hand,
+-- because their formatting libraries parse a template at run time, but Lua's is C
+-- underneath while a 32-step loop is not: hand-rolling measured 5.6x slower
+-- (1382 ns against 7691).
+--
 -- @param unix_ts_ms integer 48-bit millisecond timestamp
 -- @param rand_a     integer 12-bit value (counter or random)
 -- @param rand_b     integer 62-bit random value

@@ -17,9 +17,14 @@ cell `reps` times, and prints the minimum.
 - **Timing is inside the process.** Interpreter startup and the 1024-UUID corpus
   for `decode` and `predicate` are both excluded, so the cells measure the
   operation and nothing else.
-- **Minimum, not mean.** The minimum is the run least contaminated by other load.
-  Repeating one cell seven times on the reference machine spread 2.8%, so treat
-  differences under ~5% as noise.
+- **Minimum, not mean.** The minimum is the run least contaminated by other load,
+  and it is the figure that reproduces: re-running the whole table on an unchanged
+  tree returned every cell within a few percent of the recorded one.
+  Individual runs are far noisier than that, and unevenly so. Repeating one cell
+  nine times spread 6.6% for Rust's `generate`, 9.9% for C's `decode`, and 34% for
+  Ruby's predicate, where GC timing is the likely cause. So: do not read anything
+  into a small difference, and raise `reps` before concluding anything about the
+  interpreted columns.
 - **The checksum is load-bearing.** Rust uses `black_box` and C writes through a
   `volatile`; without them the optimizer deletes calls whose results go unused.
 - **Lua's column is CPU time**, from `os.clock`, because standard Lua has no

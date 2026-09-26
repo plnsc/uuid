@@ -194,6 +194,11 @@ module UUIDv7
     #   [63..62]   var          ( 2 bits)  → 0b10
     #   [61..0]    rand_b       (62 bits)
     #
+    # Keep +format+ here. uuid_v7.rs and uuid_v7.c emit the nibbles by hand,
+    # because their formatting libraries parse a template at run time, but Ruby's
+    # is C underneath while a 32-step loop is not: hand-rolling measured 9.7x
+    # slower (1474 ns against 14266).
+    #
     # @param unix_ts_ms [Integer] 48-bit millisecond timestamp
     # @param rand_a     [Integer] 12-bit value (counter or random)
     # @param rand_b     [Integer] 62-bit random value

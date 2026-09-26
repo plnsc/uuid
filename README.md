@@ -249,16 +249,18 @@ O pool de entropia do Lua é o único das seis que não tem como se proteger de 
 
 | operação | C | Rust | JS | Lua | Ruby | Python |
 |---|---|---|---|---|---|---|
-| `generate` | **332** | 853 | 696 | 3178 | 3776 | 3748 |
-| `generate_random` | **357** | 860 | 767 | 3262 | 4155 | 4521 |
-| `decode` | 310 | **251** | 1073 | 6280 | 2941 | 4031 |
-| predicado | **104** | 237 | 1075 | 6337 | 2930 | 4088 |
+| `generate` | **105** | 164 | 663 | 3174 | 3960 | 3766 |
+| `generate_random` | **124** | 169 | 749 | 3271 | 4182 | 4645 |
+| `decode` | 299 | **260** | 1094 | 6377 | 2973 | 4088 |
+| predicado | 98 | **38** | 1092 | 6422 | 2928 | 4133 |
 
 O que a tabela mostra, além da ordem esperada:
 
 - desde o [pool de entropia](#pool-de-entropia), o gargalo do `generate` deixou de ser o CSPRNG e passou a ser a montagem da string. É por isso que Ruby, Python e Lua ficam nos ~3 µs: quase tudo ali é formatação de inteiro grande e concatenação;
-- o predicado do C é 3x mais barato que o próprio `decode`, porque `uuidv7_decode(uuid, NULL)` sai antes de preencher a struct. Nas outras cinco, predicado ≈ `decode`, já que o resultado é construído e descartado;
-- o `decode` do Lua é o mais lento das seis por ser o único que formata o timestamp com `os.date` a cada chamada, em vez de só construir um objeto de tempo.
+- **nas duas compiladas, a montagem não usa a biblioteca de formatação.** Era ela o custo: em Rust, `format!("{:032x}")` mais um segundo `format!` para os hífens custavam 759 ns dos 853 do `generate`; em C, o `snprintf` custava 245 dos 348, por interpretar o template em tempo de execução. Emitindo os nibbles sobre as larguras de grupo, o Rust caiu para 164 ns e o C para 105, sem `unsafe` e sem mudar a saída. Nas quatro interpretadas o mesmo truque é **regressão**, de 5,6x no Lua a 11,8x no JS (6,6x no Python, 9,7x no Ruby), porque lá o `format` é código nativo e o laço de 32 passos não é;
+- o predicado do Rust é o mais rápido das seis (38 ns) porque `is_valid` deixou de passar pelo `decode`: construía o resultado inteiro, com duas alocações, só para descartar. O do C já fazia isso, saindo antes de preencher a struct quando recebe `NULL`. Nas outras quatro, predicado ≈ `decode`;
+- o `decode` do Lua é o mais lento das seis por ser o único que formata o timestamp com `os.date` a cada chamada, em vez de só construir um objeto de tempo;
+- o Rust fica ~60 ns atrás do C no `generate`, e essa diferença é uma alocação de heap de 36 bytes: ele devolve uma `String` própria, como cinco das seis, enquanto o C escreve no buffer do chamador. É escolha de API, não custo de segurança de ponteiro. A verificação de limites, por sua vez, não aparece: a versão com iteradores ficou mais rápida que a com tabela de índices, as duas em safe Rust.
 
 As regras de que os números dependem (cronometragem dentro do processo, mínimo em vez de média, `black_box` e `volatile` para o otimizador não apagar as chamadas, e a ressalva de que a coluna do Lua é tempo de CPU) estão em [`bench/README.md`](bench/README.md). **Remeça na sua máquina** em vez de citar esta tabela: ela vale para uma máquina e uma execução.
 

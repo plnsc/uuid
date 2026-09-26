@@ -227,6 +227,11 @@ def _assemble(unix_ts_ms: int, rand_a: int, rand_b: int) -> str:
       [63..62]   var          ( 2 bits)  -> 0b10
       [61..0]    rand_b       (62 bits)
 
+    Keep the format call here. uuid_v7.rs and uuid_v7.c emit the nibbles by
+    hand, because their formatting libraries parse a template at run time, but
+    CPython's is C underneath while a 32-step loop is not: hand-rolling measured
+    6.6x slower (913 ns against 6039).
+
     :param unix_ts_ms: 48-bit millisecond timestamp
     :param rand_a: 12-bit value (counter or random)
     :param rand_b: 62-bit random value

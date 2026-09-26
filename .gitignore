@@ -20,6 +20,11 @@ lua_modules/
 node_modules/
 package-lock.json
 
+# ── Benchmark ────────────────────────────────────────────────────────────────
+# bench/run.sh builds the two compiled drivers next to their sources.
+/bench/bench_rs
+/bench/bench_c
+
 # ── C ────────────────────────────────────────────────────────────────────────
 # uuid_v7.c is compiled by hand (cc -std=c11 -O2 -pthread uuid_v7.c -o uuid_v7_c),
 # so the binary lands right next to the source. The two compiled siblings use

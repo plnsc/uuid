@@ -34,8 +34,8 @@
 
 from __future__ import annotations
 
+import os
 import re
-import secrets
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -67,6 +67,65 @@ __all__ = [
     "generate_random",
     "generate_bulk",
 ]
+
+
+# ── Entropy pool ─────────────────────────────────────────────────────────────
+
+# os.urandom is a CSPRNG, matching Ruby's SecureRandom, JavaScript's Web Crypto,
+# and the /dev/urandom that Rust and C read. It replaces secrets.randbelow, which
+# is rejection sampling and measured ~3230 ns per draw: every caller here asks for
+# a power-of-two range, so a mask over pooled bytes is the same distribution for
+# ~640 ns.
+#
+# All six siblings pool their entropy, and all six owe the same two answers:
+#
+#   * fork() copies the pool, so parent and child would be served the same bytes
+#     and emit identical UUIDs. Python is the only sibling with an official hook
+#     for this, os.register_at_fork, so the guard costs nothing per draw, where
+#     Ruby has to compare the pid on every one.
+#   * the pool holds entropy not yet used, so bytes are zeroed as they are handed
+#     out, keeping the resident window to what is still unread. That needs a
+#     bytearray; the Ruby and Lua pools are immutable strings and cannot.
+#
+# The pool is process-wide, so it needs the lock: the GIL does not make
+# read-modify-write on the offset atomic, and two threads must never be served the
+# same bytes.
+
+_POOL_LEN = 4096
+_pool = bytearray()
+_pool_off = _POOL_LEN
+_pool_lock = threading.Lock()
+
+
+def _reset_pool() -> None:
+    """Drop the pool, so a forked child never reuses its parent's bytes."""
+    global _pool, _pool_off
+    _pool = bytearray()
+    _pool_off = _POOL_LEN
+
+
+os.register_at_fork(after_in_child=_reset_pool)
+
+
+def _rand_bits(bits: int) -> int:
+    """Return `bits` random bits, drawn from the pool.
+
+    :param bits: width to mask down to; every caller asks for a power-of-two
+        range, so masking suffices, with no modulo bias to correct
+    """
+    global _pool, _pool_off
+
+    with _pool_lock:
+        if _pool_off + 8 > len(_pool):
+            _pool = bytearray(os.urandom(_POOL_LEN))
+            _pool_off = 0
+
+        off = _pool_off
+        _pool_off = off + 8
+        chunk = bytes(_pool[off:off + 8])
+        _pool[off:off + 8] = bytes(8)   # consumed entropy does not stay resident
+
+    return int.from_bytes(chunk, "little") & ((1 << bits) - 1)
 
 
 # ── Generator ────────────────────────────────────────────────────────────────
@@ -107,8 +166,8 @@ class Generator:
         Simpler, but NOT monotonic within a millisecond.
         """
         ms = _current_ms()
-        rand_a = secrets.randbelow(MAX_RAND_A + 1)
-        rand_b = secrets.randbelow(MAX_RAND_B + 1)
+        rand_a = _rand_bits(RAND_A_BITS)
+        rand_b = _rand_bits(RAND_B_BITS)
         return _assemble(ms, rand_a, rand_b)
 
     def generate_bulk(self, n: int) -> list[str]:
@@ -134,7 +193,7 @@ class Generator:
         if ms > self._last_ms:
             # ── New millisecond: re-seed the counter ─────────────────────────
             # An 11-bit seed keeps the MSB free, leaving room for 2048 increments.
-            self._seq = secrets.randbelow(1 << (RAND_A_BITS - 1))
+            self._seq = _rand_bits(RAND_A_BITS - 1)
             self._last_ms = ms
         else:
             # ── Same (or rare clock regression) millisecond: increment ───────
@@ -143,11 +202,11 @@ class Generator:
             if self._seq > MAX_RAND_A:
                 # Counter exhausted, so bump the virtual clock by 1 ms (§6.2)
                 self._last_ms += 1
-                self._seq = secrets.randbelow(1 << (RAND_A_BITS - 1))
+                self._seq = _rand_bits(RAND_A_BITS - 1)
 
             ms = self._last_ms
 
-        rand_b = secrets.randbelow(MAX_RAND_B + 1)
+        rand_b = _rand_bits(RAND_B_BITS)
         return ms, self._seq, rand_b
 
 

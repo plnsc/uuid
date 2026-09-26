@@ -10,11 +10,13 @@
 -- share the same field layout and monotonicity contract. Requires Lua 5.3+
 -- (64-bit integers and bitwise operators).
 --
--- Three language limits force a divergence from the siblings:
+-- Four language limits force a divergence from the siblings:
 --   * No 128-bit integers, so the UUID is assembled per hex group (`assemble`).
 --   * No millisecond wall clock in the stdlib, so `current_ms` probes for
 --     luaposix / luasocket, else interpolates.
 --   * No preemptive threads, so no mutex (`Generator`).
+--   * No fork and no way to observe one, so the entropy pool is the only one of
+--     the six that cannot be guarded against it (`rand_bits`).
 --
 -- 128-bit field layout (big-endian, MSB first):
 --
@@ -71,7 +73,7 @@ local UUID_PATTERN = M.UUID_PATTERN
 
 -- ── Entropy source ───────────────────────────────────────────────────────────
 
--- Prefer /dev/urandom, a CSPRNG matching Ruby's SecureRandom, Python's secrets,
+-- Prefer /dev/urandom, a CSPRNG matching Ruby's SecureRandom, Python's os.urandom,
 -- JavaScript's Web Crypto, and the same device Rust and C read. math.random is NOT
 -- cryptographically secure and is used only when /dev/urandom cannot be opened;
 -- M.entropy_source reports which is live.
@@ -79,16 +81,39 @@ local urandom = io.open("/dev/urandom", "rb")
 
 M.entropy_source = urandom and "/dev/urandom" or "math.random (NOT a CSPRNG)"
 
+-- Bytes are drawn ahead, so one read serves many draws: 8 bytes at a time
+-- measured ~570 ns against ~170 ns amortized over a block this size. All six
+-- siblings pool for that reason, and this is the one that cannot protect the
+-- pool. fork() copies it, and parent and child would then be served the same
+-- bytes and emit identical UUIDs; Python has os.register_at_fork, Ruby compares
+-- Process.pid, Rust and C compare getpid, and standard Lua has neither fork nor
+-- any way to observe one. The exposure is not new, since io already read through
+-- a buffered FILE *, but a host that forks after loading this module must reload
+-- it in the child. For the same reason the block stays resident: Lua strings are
+-- immutable, so consumed bytes cannot be zeroed the way they are in Python, Rust
+-- and C.
+local POOL_LEN = 4096
+local pool, pool_off = "", POOL_LEN + 1
+
 -- Returns `nbits` random bits as a non-negative integer. Every caller asks
 -- for a power-of-two range, so masking suffices, with no modulo bias to correct.
 local function rand_bits(nbits)
   local mask = (1 << nbits) - 1
 
   if urandom then
-    local bytes = urandom:read(8)
-    if bytes and #bytes == 8 then
-      return string.unpack("<I8", bytes) & mask
+    if pool_off + 7 > #pool then
+      local block = urandom:read(POOL_LEN)
+      if block and #block == POOL_LEN then
+        pool, pool_off = block, 1
+      end
     end
+
+    if pool_off + 7 <= #pool then
+      local v
+      v, pool_off = string.unpack("<I8", pool, pool_off)
+      return v & mask
+    end
+
     -- Read failed mid-run: give up and fall through to math.random.
     urandom:close()
     urandom = nil

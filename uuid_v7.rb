@@ -49,6 +49,58 @@ module UUIDv7
   # RFC 9562 §4: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
   UUID_REGEX = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i.freeze
 
+  # ── Entropy pool ────────────────────────────────────────────────────────────
+
+  # SecureRandom is a CSPRNG, matching Python's os.urandom, JavaScript's Web
+  # Crypto, and the /dev/urandom that Rust and C read. Drawing a range per call
+  # measured ~1560 ns; every caller here asks for a power-of-two range, so a mask
+  # over pooled bytes is the same distribution for ~540 ns.
+  #
+  # All six siblings pool their entropy, and all six owe the same two answers:
+  #
+  #   * fork copies the pool, so parent and child would be served the same bytes
+  #     and emit identical UUIDs. Ruby exposes no at_fork hook the way Python's
+  #     os.register_at_fork does, so the pid is compared on every draw, at ~95 ns.
+  #   * the pool holds entropy not yet used. Ruby cannot zero the bytes it hands
+  #     out the way the Python, Rust and C pools do, since byteslice copies out of
+  #     an immutable-by-convention buffer, so the whole block stays resident until
+  #     it is replaced. Lua has the same limit.
+  #
+  # The pool is process-wide, so it needs its own mutex: the one inside Generator
+  # does not cover generate_random, and two threads must never be served the same
+  # bytes.
+  POOL_LEN = 4096
+
+  @pool       = String.new(capacity: POOL_LEN, encoding: Encoding::BINARY)
+  @pool_off   = POOL_LEN
+  @pool_pid   = nil
+  @pool_mutex = Mutex.new
+
+  # Returns +bits+ random bits, drawn from the pool.
+  #
+  # @param bits [Integer] width to mask down to
+  # @return [Integer]
+  def self.rand_bits(bits)
+    chunk = @pool_mutex.synchronize do
+      pid = Process.pid
+      if pid != @pool_pid
+        @pool_pid = pid
+        @pool_off = POOL_LEN   # drop whatever fork gave us
+      end
+
+      if @pool_off + 8 > @pool.bytesize
+        @pool.replace(SecureRandom.bytes(POOL_LEN))
+        @pool_off = 0
+      end
+
+      off = @pool_off
+      @pool_off += 8
+      @pool.byteslice(off, 8)
+    end
+
+    chunk.unpack1('Q<') & ((1 << bits) - 1)
+  end
+
   # ── Generator ───────────────────────────────────────────────────────────────
 
   # Thread-safe UUIDv7 generator.
@@ -82,8 +134,8 @@ module UUIDv7
     # @return [String]
     def generate_random
       ms     = current_ms
-      rand_a = SecureRandom.random_number(MAX_RAND_A + 1)
-      rand_b = SecureRandom.random_number(MAX_RAND_B + 1)
+      rand_a = UUIDv7.rand_bits(RAND_A_BITS)
+      rand_b = UUIDv7.rand_bits(RAND_B_BITS)
       assemble(ms, rand_a, rand_b)
     end
 
@@ -112,7 +164,7 @@ module UUIDv7
       if ms > @last_ms
         # ── New millisecond: re-seed the counter ────────────────────────────
         # An 11-bit seed keeps the MSB free, leaving room for 2048 increments.
-        @seq     = SecureRandom.random_number(1 << (RAND_A_BITS - 1))
+        @seq     = UUIDv7.rand_bits(RAND_A_BITS - 1)
         @last_ms = ms
       else
         # ── Same (or rare clock regression) millisecond: increment ──────────
@@ -121,13 +173,13 @@ module UUIDv7
         if @seq > MAX_RAND_A
           # Counter exhausted, so bump the virtual clock by 1 ms (RFC 9562 §6.2)
           @last_ms += 1
-          @seq      = SecureRandom.random_number(1 << (RAND_A_BITS - 1))
+          @seq      = UUIDv7.rand_bits(RAND_A_BITS - 1)
         end
 
         ms = @last_ms
       end
 
-      rand_b = SecureRandom.random_number(MAX_RAND_B + 1)
+      rand_b = UUIDv7.rand_bits(RAND_B_BITS)
       [ms, @seq, rand_b]
     end
 

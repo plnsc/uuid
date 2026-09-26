@@ -95,6 +95,25 @@ Daí a RFC recomendar (SHOULD, §6.9) um **CSPRNG**: um gerador em que prever a 
 
 As seis implementações usam CSPRNG. O único caminho degradado está descrito nas particularidades do Lua, adiante.
 
+### Pool de entropia
+
+As seis sacam os bits aleatórios de um pool reabastecido em blocos de 4096 bytes, em vez de chamar o CSPRNG a cada UUID. O motivo é medido: um saque por chamada custa de ~570 ns (Lua) a ~3230 ns (Python, cujo `secrets.randbelow` faz amostragem com rejeição), contra 23 a 640 ns com pool. No `generate` completo, a diferença é de 4,8x no JavaScript, 2,4x no Rust, 1,5x no Python, 1,2x no Ruby, 1,14x no Lua e 1,13x no C. As três mais lentas ganham menos porque nelas o gargalo é a montagem da string, não a entropia.
+
+Mascarar é válido porque todo chamador pede uma faixa potência de dois, então não há viés de módulo a corrigir. É também por isso que Python e Ruby deixaram de usar as APIs de faixa (`secrets.randbelow`, `SecureRandom.random_number`): mesma distribuição, um terço a um quinto do custo.
+
+**Um pool é perigoso diante de `fork()`**, e isso não é hipótese. O `fork` duplica o pool, então pai e filho recebem os mesmos bytes e emitem UUIDs **idênticos**. A implementação em C lia através de um `FILE *`, e o buffer do stdio fazia exatamente isso: pai e filho produziam o mesmo UUID em toda execução. Cada linguagem se defende com o que tem:
+
+| | proteção | custo por saque |
+|---|---|---|
+| Python | `os.register_at_fork`, o único hook oficial entre as seis | nenhum |
+| Ruby | compara `Process.pid`, por não haver hook | ~95 ns |
+| Rust | compara `std::process::id()` | ~2 ns |
+| C | compara `getpid()` | ~3 ns |
+| JavaScript | dispensa: Node não forka, e cada worker thread tem isolate e pool próprios | nenhum |
+| Lua | **nenhuma possível**: não há `fork` nem como observá-lo. O risco é latente e não é pior que o do buffer do stdio que o pool substituiu, mas um host que forka precisa recarregar o módulo no filho |
+
+Os bytes já consumidos são zerados na saída em Python, Rust e C, de modo que só entropia ainda não lida permanece na memória. Ruby e Lua não conseguem: seus pools são strings imutáveis.
+
 ---
 
 ## Exemplo prático: um UUIDv7 real, campo a campo
@@ -196,11 +215,13 @@ int main(void) {
 }
 ```
 
-### Testes
+### Testes e benchmark
 
 Não há framework: cada arquivo traz uma demonstração autocontida no final, executada ao rodá-lo diretamente (no Rust e no C, ao compilá-lo e executar o binário). Ela verifica geração, decodificação, ordenação de 100 000 UUIDs, acesso concorrente e o vetor do Apêndice A.6 da RFC.
 
 > Os resultados saem como `true`/`false` e `✓`/`✗`: o processo **não** retorna código de erro em caso de falha, então é preciso ler a saída.
+
+Para desempenho há o `bench/`, com um driver por linguagem e o runner `bench/run.sh`; veja *Desempenho*, adiante.
 
 ### Particularidades do JavaScript
 
@@ -220,7 +241,26 @@ Lua não tem inteiros de 128 bits, relógio de milissegundos na biblioteca padr�
 - o relógio usa `luaposix`/`luasocket` se instalados; caso contrário, interpola dentro do segundo (a ordenação nunca depende disso, só a precisão do timestamp);
 - não há mutex, porque não há concorrência preemptiva a proteger.
 
-A entropia vem de `/dev/urandom`. O `math.random` entra só se ele não puder ser aberto e **não é criptograficamente seguro** (veja *Segurança e imprevisibilidade*); é a exceção prevista em §6.9, "when a suitable CSPRNG is unavailable in the execution environment". Os campos `entropy_source` e `clock_source` informam qual caminho está ativo.
+O pool de entropia do Lua é o único das seis que não tem como se proteger de `fork` (veja *Pool de entropia*), e o único, junto com o do Ruby, que não pode zerar os bytes consumidos. A entropia vem de `/dev/urandom`. O `math.random` entra só se ele não puder ser aberto e **não é criptograficamente seguro** (veja *Segurança e imprevisibilidade*); é a exceção prevista em §6.9, "when a suitable CSPRNG is unavailable in the execution environment". Os campos `entropy_source` e `clock_source` informam qual caminho está ativo.
+
+### Desempenho
+
+`bench/run.sh` compara as seis nas quatro operações públicas e imprime uma tabela. Medição de referência (MacBook Intel i5-8259U 2,3 GHz, macOS 15.7.7; Ruby 4.0.3, Python 3.14.7, Node 26.4.0, Lua 5.5.1, rustc 1.98.1 com `-O`, Apple clang 17 com `-O2`), n = 100 000, mínimo de 5 execuções, **nanossegundos por operação**:
+
+| operação | C | Rust | JS | Lua | Ruby | Python |
+|---|---|---|---|---|---|---|
+| `generate` | **332** | 853 | 696 | 3178 | 3776 | 3748 |
+| `generate_random` | **357** | 860 | 767 | 3262 | 4155 | 4521 |
+| `decode` | 310 | **251** | 1073 | 6280 | 2941 | 4031 |
+| predicado | **104** | 237 | 1075 | 6337 | 2930 | 4088 |
+
+O que a tabela mostra, além da ordem esperada:
+
+- desde o [pool de entropia](#pool-de-entropia), o gargalo do `generate` deixou de ser o CSPRNG e passou a ser a montagem da string. É por isso que Ruby, Python e Lua ficam nos ~3 µs: quase tudo ali é formatação de inteiro grande e concatenação;
+- o predicado do C é 3x mais barato que o próprio `decode`, porque `uuidv7_decode(uuid, NULL)` sai antes de preencher a struct. Nas outras cinco, predicado ≈ `decode`, já que o resultado é construído e descartado;
+- o `decode` do Lua é o mais lento das seis por ser o único que formata o timestamp com `os.date` a cada chamada, em vez de só construir um objeto de tempo.
+
+As regras de que os números dependem (cronometragem dentro do processo, mínimo em vez de média, `black_box` e `volatile` para o otimizador não apagar as chamadas, e a ressalva de que a coluna do Lua é tempo de CPU) estão em [`bench/README.md`](bench/README.md). **Remeça na sua máquina** em vez de citar esta tabela: ela vale para uma máquina e uma execução.
 
 ### Particularidades do C
 
@@ -232,13 +272,13 @@ C não tem inteiro de 128 bits no padrão (`__int128` é extensão de compilador
 - o lock é `pthread_mutex_t`, porque o `<threads.h>` do C11 é opcional e a libc da Apple não o traz (`__STDC_NO_THREADS__`);
 - o formato é conferido dígito a dígito em `uuidv7_parse`, e a demonstração checa unicidade com `qsort` mais comparação de vizinhos, por não haver tabela hash na biblioteca padrão.
 
-A entropia vem de `/dev/urandom`, sem fallback: faltando o dispositivo, o processo aborta, a mesma postura do Rust e do JavaScript. Isso, mais `clock_gettime` e pthreads, restringe esta implementação a POSIX. O teste de threads é o único do repositório que pode ser verificado por máquina: com `cc -fsanitize=thread` a demonstração roda sem nenhuma corrida detectada.
+A entropia vem de `/dev/urandom` lido por descritor cru, e não por `FILE *`, justamente para o stdio não pôr um segundo buffer sem proteção de fork atrás do pool. Não há fallback: faltando o dispositivo, o processo aborta, a mesma postura do Rust e do JavaScript. Isso, mais `clock_gettime` e pthreads, restringe esta implementação a POSIX. O teste de threads é o único do repositório que pode ser verificado por máquina: com `cc -fsanitize=thread` a demonstração roda sem nenhuma corrida detectada.
 
 ### Particularidades do Rust
 
 Rust tem `u128` nativo, então a montagem não precisa de `BigInt` nem de grupos separados. As limitações estão do outro lado: a biblioteca padrão não traz CSPRNG, nem regex, nem calendário. As três estão contornadas e documentadas no cabeçalho de [`uuid_v7.rs`](uuid_v7.rs):
 
-- a entropia vem de `/dev/urandom` lido direto, sem fallback (como no JavaScript, não como no Lua): ou há CSPRNG, ou o processo entra em pânico. É o que restringe esta implementação, como a do C, a POSIX;
+- a entropia vem de `/dev/urandom` lido direto, sem fallback (como no JavaScript, não como no Lua): ou há CSPRNG, ou o processo entra em pânico. É o que restringe esta implementação, como a do C, a POSIX; o pool é `thread_local!` com inicializador `const`, então dispensa lock;
 - o formato 8-4-4-4-12 é conferido dígito a dígito em `parse_hex128`, no lugar da regex que as outras quatro têm (o C faz o mesmo, pelo mesmo motivo);
 - `decode` devolve o `SystemTime` cru, porque `std` não sabe convertê-lo em data civil; a aritmética de calendário vive em `utc_string`, usada só para imprimir a demonstração.
 

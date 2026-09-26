@@ -58,6 +58,7 @@
 // read side by side with its four siblings. `rustfmt` will want to collapse
 // both; that diff is cosmetic, and taking it costs the parallelism.
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::File;
@@ -91,17 +92,15 @@ const UUID_LEN: usize = 36;
 
 // `std` ships no CSPRNG (that lives in the `rand` / `getrandom` crates) and this
 // file takes no dependencies, so entropy comes straight from /dev/urandom: a
-// CSPRNG, matching Ruby's SecureRandom, Python's secrets, and JavaScript's Web
-// Crypto, and the same device uuid_v7.c opens. Reading it directly is what keeps
-// these two siblings off Windows.
+// CSPRNG, matching Ruby's SecureRandom, Python's os.urandom, and JavaScript's
+// Web Crypto, and the same device uuid_v7.c opens. Reading it directly is what
+// keeps these two siblings off Windows.
 //
-// As in JavaScript and unlike Lua, there is no fallback: either the CSPRNG is
-// there or the call panics, because degrading silently to a pseudo-random
-// generator is a security regression, not an inconvenience.
+// As in every sibling, there is no fallback: either the CSPRNG is there or the
+// call panics, because degrading silently to a pseudo-random generator is a
+// security regression, not an inconvenience.
 //
-// The handle is opened once and kept open. `&File` reads go straight to
-// `read(2)`, which the kernel serializes per call, so concurrent readers get
-// distinct bytes with no lock of our own.
+// The handle is opened once and kept open.
 fn urandom() -> &'static File {
     static URANDOM: OnceLock<File> = OnceLock::new();
 
@@ -111,6 +110,40 @@ fn urandom() -> &'static File {
     })
 }
 
+/// Bytes drawn ahead, so one `read(2)` serves many calls.
+///
+/// `File::read_exact` is unbuffered, so a draw per call measured ~1330 ns
+/// against ~23 ns amortized over a block this size. All six siblings pool for
+/// that reason, and all six owe the same two answers:
+///
+/// * `fork()` duplicates the pool, so parent and child would be served the same
+///   bytes and emit identical UUIDs. `std` has no `fork`, but a caller reaching
+///   for `libc::fork` is enough, so the pid is compared on every draw:
+///   `std::process::id()` costs about 2 ns.
+/// * the pool holds entropy not yet used, so bytes are zeroed as they are handed
+///   out, keeping the resident window to what is still unread.
+///
+/// Being `thread_local!`, it needs no lock of its own and two threads can never
+/// be served the same bytes.
+const POOL_LEN: usize = 4096;
+
+struct Pool {
+    bytes: [u8; POOL_LEN],
+    off: usize,
+    pid: u32,
+}
+
+thread_local! {
+    // `const` initializer, so access is a plain TLS load with no lazy-init check.
+    static POOL: RefCell<Pool> = const {
+        RefCell::new(Pool {
+            bytes: [0; POOL_LEN],
+            off: POOL_LEN,
+            pid: 0,
+        })
+    };
+}
+
 /// Returns `bits` random bits. Every caller asks for a power-of-two range, so
 /// masking suffices, with no modulo bias to correct.
 ///
@@ -118,12 +151,28 @@ fn urandom() -> &'static File {
 ///
 /// If /dev/urandom cannot be opened or read.
 fn rand_bits(bits: u32) -> u64 {
-    let mut buf = [0u8; 8];
-    let mut src = urandom();
+    POOL.with(|cell| {
+        let pool = &mut *cell.borrow_mut();
 
-    src.read_exact(&mut buf).expect("/dev/urandom read failed");
+        let pid = std::process::id();
+        if pid != pool.pid {
+            pool.pid = pid;
+            pool.off = POOL_LEN; // drop whatever fork() handed us
+        }
 
-    u64::from_le_bytes(buf) & ((1 << bits) - 1)
+        if pool.off + 8 > POOL_LEN {
+            let mut src = urandom();
+            src.read_exact(&mut pool.bytes).expect("/dev/urandom read failed");
+            pool.off = 0;
+        }
+
+        let window = &mut pool.bytes[pool.off..pool.off + 8];
+        let v = u64::from_le_bytes(window.try_into().expect("an 8-byte window"));
+        window.fill(0);
+        pool.off += 8;
+
+        v & ((1 << bits) - 1)
+    })
 }
 
 // ── Clock ────────────────────────────────────────────────────────────────────

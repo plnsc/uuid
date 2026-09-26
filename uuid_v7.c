@@ -55,6 +55,8 @@
  * the feature level here keeps the documented compile line free of -D flags. */
 #define _POSIX_C_SOURCE 200809L
 
+#include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -63,6 +65,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 /* ── Constants ───────────────────────────────────────────────────────────── */
 
@@ -148,44 +151,93 @@ typedef struct {
 
 /* libc has no CSPRNG in ISO C, and the ones that exist are per-platform
  * (arc4random_buf on BSD, getrandom on Linux), so entropy comes straight from
- * /dev/urandom: a CSPRNG, matching Ruby's SecureRandom, Python's secrets,
+ * /dev/urandom: a CSPRNG, matching Ruby's SecureRandom, Python's os.urandom,
  * JavaScript's Web Crypto, and the same device uuid_v7.rs reads.
  *
- * As in JavaScript and Rust, and unlike Lua, there is no fallback: rand() is not
- * cryptographically secure, so a missing device aborts the process instead of
- * degrading silently. Aborting is what a void-returning C API has in place of
- * Rust's panic; a library that must survive it should call uuidv7_decode's
- * siblings differently, not weaken the generator.
+ * As in every sibling, there is no fallback: rand() is not cryptographically
+ * secure, so a missing device aborts the process instead of degrading silently.
+ * Aborting is what a void-returning C API has in place of Rust's panic; a
+ * library that must survive it should call this differently, not weaken the
+ * generator.
  *
- * The stream is opened once, under pthread_once, and left open. A FILE * carries
- * its own implicit lock in POSIX, so concurrent fread calls are safe and need no
- * lock of ours. */
-static FILE *uuidv7_urandom = NULL;
+ * Draws come from a pool rather than one read per call: a read(2) of 8 bytes
+ * measured ~1190 ns against ~31 ns amortized over a 4096-byte block. All six
+ * siblings pool for that reason, and all six owe the same two answers:
+ *
+ *   * fork() duplicates the pool, so parent and child would be served the same
+ *     bytes and emit identical UUIDs. That is not hypothetical here: an earlier
+ *     version of this file read through a FILE *, whose stdio buffer did exactly
+ *     that, and parent and child produced byte-identical UUIDs on every run.
+ *     The pid is compared on every draw, at ~3 ns, and an inherited pool is
+ *     dropped. Reading the fd directly also keeps stdio from adding a second
+ *     buffer with no such guard.
+ *   * the pool holds entropy not yet used, so bytes are zeroed as they are
+ *     handed out, keeping the resident window to what is still unread.
+ *
+ * The pool is _Thread_local, so concurrent draws need no lock of their own and
+ * two threads can never be served the same bytes. */
+#define UUIDV7_POOL_LEN 4096
+
+static int uuidv7_urandom_fd = -1;
 static pthread_once_t uuidv7_urandom_once = PTHREAD_ONCE_INIT;
+
+static _Thread_local unsigned char uuidv7_pool[UUIDV7_POOL_LEN];
+static _Thread_local size_t uuidv7_pool_off = UUIDV7_POOL_LEN;
+static _Thread_local pid_t uuidv7_pool_pid = 0;
 
 static void uuidv7_urandom_open(void)
 {
-    uuidv7_urandom = fopen("/dev/urandom", "rb");
+    uuidv7_urandom_fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+}
+
+/* Refills the pool, or aborts. Short reads and EINTR are retried; anything else
+ * is the no-CSPRNG case. */
+static void uuidv7_pool_refill(void)
+{
+    pthread_once(&uuidv7_urandom_once, uuidv7_urandom_open);
+
+    size_t filled = 0;
+    while (filled < UUIDV7_POOL_LEN) {
+        ssize_t got = uuidv7_urandom_fd < 0
+                    ? -1
+                    : read(uuidv7_urandom_fd, uuidv7_pool + filled,
+                           UUIDV7_POOL_LEN - filled);
+
+        if (got > 0) {
+            filled += (size_t)got;
+        } else if (!(got < 0 && errno == EINTR)) {
+            fputs("uuid_v7: cannot read /dev/urandom, and there is no non-CSPRNG "
+                  "fallback\n", stderr);
+            abort();
+        }
+    }
+
+    uuidv7_pool_off = 0;
 }
 
 /* Returns `bits` random bits. Every caller asks for a power-of-two range, so
  * masking suffices, with no modulo bias to correct. */
 static uint64_t uuidv7_rand_bits(unsigned bits)
 {
-    unsigned char buf[8];
-
-    pthread_once(&uuidv7_urandom_once, uuidv7_urandom_open);
-
-    if (uuidv7_urandom == NULL || fread(buf, 1, sizeof buf, uuidv7_urandom) != sizeof buf) {
-        fputs("uuid_v7: cannot read /dev/urandom, and there is no non-CSPRNG "
-              "fallback\n", stderr);
-        abort();
+    pid_t self = getpid();
+    if (self != uuidv7_pool_pid) {
+        uuidv7_pool_pid = self;
+        uuidv7_pool_off = UUIDV7_POOL_LEN;   /* drop whatever fork() handed us */
     }
+
+    if (uuidv7_pool_off + 8 > UUIDV7_POOL_LEN) {
+        uuidv7_pool_refill();
+    }
+
+    unsigned char *p = uuidv7_pool + uuidv7_pool_off;
 
     uint64_t v = 0;
-    for (size_t i = 0; i < sizeof buf; i++) {
-        v = (v << 8) | buf[i];
+    for (size_t i = 0; i < 8; i++) {
+        v = (v << 8) | p[i];
     }
+
+    memset(p, 0, 8);
+    uuidv7_pool_off += 8;
 
     return v & ((UINT64_C(1) << bits) - 1);
 }

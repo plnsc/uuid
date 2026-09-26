@@ -4,10 +4,10 @@
 #
 #   bench/run.sh [n] [reps]        # defaults: 100000 iterations, 5 repetitions
 #
-# Each cell is the minimum across repetitions, which is the least contaminated by
-# other load on the machine. Timing happens inside each driver, so interpreter
-# startup and corpus setup are excluded. Numbers are comparable between columns
-# only on one machine in one run: never carry them across machines.
+# Each cell is the minimum across repetitions, the run least contaminated by other
+# load. Timing is inside each driver, so startup and corpus setup are excluded.
+# Numbers are comparable between columns only on one machine in one run: never
+# carry them across machines.
 #
 # Needs ruby, python3, node, lua and cc on PATH, plus rustc: if rustup installed
 # it without touching your PATH, this falls back to ~/.cargo/bin/rustc, and $RUSTC

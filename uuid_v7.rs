@@ -1,13 +1,10 @@
 // =============================================================================
-// UUIDv7: Rust implementation of RFC 9562, Section 5.7
+// UUIDv7: Rust implementation of RFC 9562 §5.7
 // https://www.rfc-editor.org/rfc/rfc9562#section-5.7
-// https://datatracker.ietf.org/doc/html/rfc9562
-// https://en.wikipedia.org/wiki/Universally_unique_identifier
 //
-// Sibling implementations (uuid_v7.rb, uuid_v7.py, uuid_v7.js, uuid_v7.lua,
-// uuid_v7.c) share the same field layout and monotonicity contract. No
-// Cargo.toml and no crates, so plain rustc builds it, on Rust 1.70+
-// (`OnceLock`, const `Mutex::new`, `thread::scope`):
+// Siblings (uuid_v7.rb, .py, .js, .lua, .c) share this field layout and the same
+// monotonicity contract. No Cargo.toml and no crates, so plain rustc builds it,
+// on Rust 1.70+ (`OnceLock`, const `Mutex::new`, `thread::scope`):
 //
 //   rustc --edition 2021 -O uuid_v7.rs -o uuid_v7_rs && ./uuid_v7_rs
 //
@@ -23,7 +20,7 @@
 //     `utc_string`).
 //
 // Rust does have a native `u128`, so packing needs neither JavaScript's BigInt,
-// nor Lua's per-group emission, nor C's pair of `uint64_t` (`assemble`).
+// Lua's per-group emission, nor C's pair of `uint64_t` (`assemble`).
 //
 // 128-bit field layout (big-endian, MSB first):
 //
@@ -53,10 +50,10 @@
 // `main` and the demo-only `utc_string` are what goes unused instead.
 #![allow(dead_code)]
 
-// Formatting is deliberately hand-done rather than rustfmt-clean, to keep the
-// aligned trailing comments and the one-line demo prints that make this file
-// read side by side with its four siblings. `rustfmt` will want to collapse
-// both; that diff is cosmetic, and taking it costs the parallelism.
+// Formatting is deliberately hand-done rather than rustfmt-clean, keeping the
+// aligned trailing comments and one-line demo prints that let this file be read
+// side by side with its siblings. `rustfmt` collapses both; that diff is
+// cosmetic, and taking it costs the parallelism.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -95,13 +92,13 @@ const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 // `std` ships no CSPRNG (that lives in the `rand` / `getrandom` crates) and this
 // file takes no dependencies, so entropy comes straight from /dev/urandom: a
-// CSPRNG, matching Ruby's SecureRandom, Python's os.urandom, and JavaScript's
-// Web Crypto, and the same device uuid_v7.c opens. Reading it directly is what
-// keeps these two siblings off Windows.
+// CSPRNG, like Ruby's SecureRandom, Python's os.urandom and JavaScript's Web
+// Crypto, and the same device uuid_v7.c opens. Reading it directly is what keeps
+// these two siblings off Windows.
 //
-// As in every sibling, there is no fallback: either the CSPRNG is there or the
-// call panics, because degrading silently to a pseudo-random generator is a
-// security regression, not an inconvenience.
+// There is no fallback: either the CSPRNG is there or the call panics, degrading
+// silently to a pseudo-random generator being a security regression, not an
+// inconvenience.
 //
 // The handle is opened once and kept open.
 fn urandom() -> &'static File {
@@ -121,12 +118,12 @@ fn urandom() -> &'static File {
 ///
 /// * `fork()` duplicates the pool, so parent and child would be served the same
 ///   bytes and emit identical UUIDs. `std` has no `fork`, but a caller reaching
-///   for `libc::fork` is enough, so the pid is compared on every draw:
+///   for `libc::fork` is enough, so every draw compares the pid:
 ///   `std::process::id()` costs about 2 ns.
 /// * the pool holds entropy not yet used, so bytes are zeroed as they are handed
-///   out, keeping the resident window to what is still unread.
+///   out, keeping resident only what is still unread.
 ///
-/// Being `thread_local!`, it needs no lock of its own and two threads can never
+/// Being `thread_local!`, it needs no lock of its own, and two threads can never
 /// be served the same bytes.
 const POOL_LEN: usize = 4096;
 
@@ -195,10 +192,10 @@ fn current_ms() -> u64 {
 
 // ── Assembly ─────────────────────────────────────────────────────────────────
 
-/// Packs all fields into a 128-bit integer and formats the UUID string.
+/// Packs the fields into a 128-bit integer and formats the UUID string.
 ///
-/// Positions below count 127 as the MSB, the opposite of the RFC-style ruler in
-/// the file header, which numbers bits from 0 left to right:
+/// Positions count 127 as the MSB, the opposite of the RFC-style ruler in the
+/// file header, which numbers bits from 0 left to right:
 ///
 /// ```text
 ///   [127..80]  unix_ts_ms   (48 bits)
@@ -220,13 +217,13 @@ fn current_ms() -> u64 {
 /// argument truncates instead of overflowing into its neighbour.
 ///
 /// The nibbles are emitted over [`UUID_GROUP_WIDTHS`] rather than through
-/// `format!`, which was where nearly all of this function's cost lived:
+/// `format!`, where nearly all of this function's cost lived:
 /// `format!("{n:032x}")` plus a second `format!` for the hyphens measured 759 ns
-/// against 79 ns here, since the formatting machinery parses its template at run
-/// time and allocates twice. `uuid_v7.c` dropped `snprintf` for the same reason.
-/// Written with iterators rather than an index table, which also happens to be
-/// the faster of the two safe spellings (79 ns against 114), the optimizer having
-/// an easier time proving the bounds.
+/// against 79 ns here, the formatting machinery parsing its template at run time
+/// and allocating twice. `uuid_v7.c` dropped `snprintf` for the same reason.
+/// Written with iterators rather than an index table, which is also the faster of
+/// the two safe spellings (79 ns against 114), the optimizer having an easier time
+/// proving the bounds.
 ///
 /// **Do not carry this to the four interpreted siblings.** There the format
 /// primitive is native code and a 32-step scripted loop is not: measured 5.6x
@@ -293,10 +290,9 @@ impl State {
 /// Thread-safe UUIDv7 generator.
 ///
 /// Method 2 (monotonic counter) of RFC 9562 §6.2: `rand_a` is a counter
-/// re-seeded on each new millisecond, giving strict lexicographic ordering even
-/// within a single millisecond; `rand_b` is always fresh random data. On counter
-/// overflow (> `0xFFF`) the timestamp is bumped 1 ms, the "counter rollover"
-/// that same section permits.
+/// re-seeded on each new millisecond, so ordering is strict even within one
+/// millisecond; `rand_b` is always fresh random data. On overflow (> `0xFFF`) the
+/// timestamp is bumped 1 ms, the "counter rollover" that section permits.
 ///
 /// ```text
 /// let generator = Generator::new();
@@ -402,8 +398,8 @@ pub struct Decoded {
 
 /// Why a string is not a UUIDv7.
 ///
-/// The three variants carry the same information the siblings put in their
-/// exception messages; [`fmt::Display`] renders them with the same wording.
+/// The three variants carry what the siblings put in their exception messages;
+/// [`fmt::Display`] renders them with the same wording.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError {
     /// Not 8-4-4-4-12 hex digits.
@@ -435,7 +431,7 @@ impl std::error::Error for DecodeError {}
 ///
 /// This is the format check the siblings delegate to a regex: `std` has none, so
 /// the group widths from [`UUID_GROUP_WIDTHS`] are walked digit by digit.
-/// `char::to_digit` accepts either letter case, matching their case-insensitive
+/// `char::to_digit` takes either letter case, matching their case-insensitive
 /// patterns, and rejects every non-ASCII byte.
 fn parse_hex128(uuid: &str) -> Option<u128> {
     let bytes = uuid.as_bytes();
@@ -496,11 +492,11 @@ pub fn decode(uuid: &str) -> Result<Decoded, DecodeError> {
 
 /// Parses and validates, without building a [`Decoded`].
 ///
-/// The whole of what [`is_valid`] needs, and the first half of what [`decode`]
-/// needs, so validation still lives in one place. Going through `decode` made the
-/// predicate allocate a lowercased `String` and a variant `String` only to drop
-/// them, which cost more than the parse itself: 242 ns against 38. `uuid_v7.c`
-/// splits the same way, by passing a NULL out-parameter.
+/// All [`is_valid`] needs, and the first half of what [`decode`] needs, so
+/// validation still lives in one place. Going through `decode` made the predicate
+/// allocate a lowercased `String` and a variant `String` only to drop them,
+/// costing more than the parse itself: 242 ns against 38. `uuid_v7.c` splits the
+/// same way, by passing a NULL out-parameter.
 fn parse_checked(uuid: &str) -> Result<u128, DecodeError> {
     let n = parse_hex128(uuid).ok_or_else(|| DecodeError::Format(uuid.to_string()))?;
 
@@ -548,7 +544,7 @@ pub fn generate_bulk(n: usize) -> Vec<String> {
 // (build and run with: rustc --edition 2021 -O uuid_v7.rs -o uuid_v7_rs && ./uuid_v7_rs)
 // =============================================================================
 //
-// Rust is compiled, so there is no run-time equivalent of Ruby's
+// Compiled, so there is no run-time equivalent of Ruby's
 // `__FILE__ == $PROGRAM_NAME`: the switch happens at build time. `rustc` on this
 // file makes `main` the entry point; declaring it as a module (`mod uuid_v7;`)
 // from another crate exposes the API above and leaves `main` unused.
@@ -557,9 +553,8 @@ pub fn generate_bulk(n: usize) -> Vec<String> {
 ///
 /// `std` has no calendar: `SystemTime` is an opaque instant, and civil-date
 /// conversion lives in the `chrono` / `time` crates. `decode` still returns the
-/// real `SystemTime`, so this exists only to print it, the way the JavaScript
-/// demo calls `Date.prototype.toISOString`. Lua's `decode` formats a string for
-/// the same reason, via `os.date`.
+/// real `SystemTime`, so this exists only to print it, as the JavaScript demo
+/// calls `Date.prototype.toISOString` and Lua's `decode` uses `os.date`.
 ///
 /// The date arithmetic is Howard Hinnant's `civil_from_days`, which shifts the
 /// year to start in March so the leap day falls last and needs no special case.
@@ -676,8 +671,9 @@ fn main() {
 
     // ── RFC 9562 Appendix A.6 test vector ────────────────────────────────────
     println!("\n── RFC 9562 Appendix A.6 test vector ───────────────────────────────");
-    // The RFC provides:  017F22E2-79B0-7CC3-98C4-DC0C0C07398F
-    // unix_ts_ms = 0x017F22E279B0 = 1645557742000  (2022-02-22T19:22:22.000Z, i.e. 2:22:22 PM GMT-05:00)
+    // From the RFC: 017F22E2-79B0-7CC3-98C4-DC0C0C07398F, whose
+    // unix_ts_ms = 0x017F22E279B0 = 1645557742000 (2022-02-22T19:22:22Z, printed
+    // there as 2:22:22 PM GMT-05:00)
     let tv = decode("017f22e2-79b0-7cc3-98c4-dc0c0c07398f").expect("the A.6 vector must decode");
     println!("  UUID:        {}", tv.uuid);
     println!("  unix_ts_ms:  {}  (expected: 1645557742000)", tv.unix_ts_ms);

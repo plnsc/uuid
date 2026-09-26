@@ -1,15 +1,11 @@
 #!/usr/bin/env node
 // =============================================================================
-// UUIDv7: JavaScript implementation of RFC 9562, Section 5.7
+// UUIDv7: JavaScript implementation of RFC 9562 §5.7
 // https://www.rfc-editor.org/rfc/rfc9562#section-5.7
-// https://datatracker.ietf.org/doc/html/rfc9562
-// https://en.wikipedia.org/wiki/Universally_unique_identifier
 //
-// Sibling implementations (uuid_v7.rb, uuid_v7.py, uuid_v7.lua, uuid_v7.rs,
-// uuid_v7.c)
-// share the same field layout and monotonicity contract. CommonJS, so it runs as
-// `node uuid_v7.js` with no package.json. Requires a global Web Crypto
-// (Node 19+) and BigInt (ES2020).
+// Siblings (uuid_v7.rb, .py, .lua, .rs, .c) share this field layout and the same
+// monotonicity contract. CommonJS, so it runs as `node uuid_v7.js` with no
+// package.json. Needs a global Web Crypto (Node 19+) and BigInt (ES2020).
 //
 // Three language traits shape this implementation:
 //   * Numbers are IEEE-754 doubles, exact only to 2^53, so packing uses BigInt
@@ -58,16 +54,15 @@ const UUID_REGEX =
 
 // ── Entropy source ───────────────────────────────────────────────────────────
 
-// Web Crypto is a CSPRNG, matching Ruby's SecureRandom, Python's os.urandom, and
-// the /dev/urandom that Rust and C read. There is no Math.random fallback: it is
-// not cryptographically secure, and failing loudly beats degrading silently.
+// Web Crypto is a CSPRNG, like Ruby's SecureRandom, Python's os.urandom, and the
+// /dev/urandom Rust and C read. There is no Math.random fallback: it is not
+// cryptographically secure, and failing loudly beats degrading silently.
 //
 // Bytes are drawn ahead, so one getRandomValues call serves many draws: per-call
-// it measured ~2450 ns against ~43 ns amortized over a block this size. All six
-// siblings pool for that reason, and the other five have to guard the pool
-// against fork(), which would hand parent and child the same bytes. This one does
-// not: Node has no fork, and a worker thread gets its own isolate, so it gets its
-// own pool and can never be served these bytes.
+// measured ~2450 ns against ~43 ns amortized over a block this size. All six
+// siblings pool for that reason, and the other five must guard the pool against
+// fork(), which would hand parent and child the same bytes. This one need not:
+// Node has no fork, and a worker thread gets its own isolate, hence its own pool.
 //
 // Reading the block through a DataView matters as much as the pooling:
 // getBigUint64 replaces an eight-step BigInt fold that cost ~490 ns on its own.
@@ -97,12 +92,11 @@ function randomBits(bits) {
 // ── Assembly ─────────────────────────────────────────────────────────────────
 
 /**
- * Packs all fields into a 128-bit integer and formats the UUID string.
+ * Packs the fields into a 128-bit integer and formats the UUID string.
  *
- * A Number is exact only to 2^53, too narrow for a 128-bit value, so the
- * packing is done in BigInt. Positions below count 127 as the MSB, the
- * opposite of the RFC-style ruler in the file header, which numbers bits from
- * 0 left to right:
+ * A Number is exact only to 2^53, too narrow for a 128-bit value, so packing is
+ * done in BigInt. Positions count 127 as the MSB, the opposite of the RFC-style
+ * ruler in the file header, which numbers bits from 0 left to right:
  *
  *   [127..80]  unix_ts_ms   (48 bits)
  *   [79..76]   ver          ( 4 bits)  -> 0b0111
@@ -110,10 +104,10 @@ function randomBits(bits) {
  *   [63..62]   var          ( 2 bits)  -> 0b10
  *   [61..0]    rand_b       (62 bits)
  *
- * Keep the template literal here. uuid_v7.rs and uuid_v7.c emit the nibbles by
- * hand, because their formatting libraries parse a template at run time, but
+ * Keep the template literal. uuid_v7.rs and uuid_v7.c emit the nibbles by hand
+ * because their formatting libraries parse a template at run time, but
  * toString(16) is native while a 32-step loop over BigInt is not: hand-rolling
- * measured 11.8x slower (260 ns against 3056), the widest margin of the four.
+ * measured 11.8x slower (3056 ns against 260), the widest margin of the four.
  *
  * @param {number} unixTsMs 48-bit millisecond timestamp
  * @param {number} randA    12-bit value (counter or random)
@@ -140,15 +134,14 @@ function assemble(unixTsMs, randA, randB) {
  * UUIDv7 generator.
  *
  * Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
- * on each new millisecond, giving strict lexicographic ordering even within a
- * single millisecond; rand_b is always fresh random data. On counter overflow
- * (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
- * section permits.
+ * on each new millisecond, so ordering is strict even within one millisecond;
+ * rand_b is always fresh random data. On overflow (> 0xFFF) the timestamp is
+ * bumped 1 ms, the "counter rollover" that section permits.
  *
- * No mutex, unlike the Ruby, Python, Rust, and C siblings: JavaScript runs one
+ * No mutex, unlike the Ruby, Python, Rust and C siblings: JavaScript runs one
  * event loop and nextState contains no await, so nothing can interleave it.
- * Worker threads get their own isolate and their own generator, so they never
- * share this state.
+ * Worker threads get their own isolate and generator, so they never share this
+ * state.
  *
  *   const gen = new Generator();
  *   gen.generate();  // => "018f2e39-59b7-7e82-9c3a-4d5b9e2f1a60"
@@ -370,9 +363,9 @@ if (require.main === module) {
     console.log(`  Sorted?  ${big.every((u, i) => i === 0 || big[i - 1] <= u)}`);
 
     // ── Async interleaving test ──────────────────────────────────────────────
-    // JavaScript has one event loop, so this stands in for the thread-safety
-    // test in the Ruby, Python, Rust, and C siblings: four async tasks yield to
-    // the microtask queue between calls, interleaving into the shared generator.
+    // One event loop, so this stands in for the thread-safety test in the Ruby,
+    // Python, Rust and C siblings: four async tasks yield to the microtask queue
+    // between calls, interleaving into the shared generator.
     console.log("\n── Async interleaving: 4 tasks × 5_000 UUIDs ───────────────────────");
     const buckets = await Promise.all(
       Array.from({ length: 4 }, async () => {
@@ -407,8 +400,9 @@ if (require.main === module) {
 
     // ── RFC 9562 Appendix A.6 test vector ────────────────────────────────────
     console.log("\n── RFC 9562 Appendix A.6 test vector ───────────────────────────────");
-    // The RFC provides:  017F22E2-79B0-7CC3-98C4-DC0C0C07398F
-    // unix_ts_ms = 0x017F22E279B0 = 1645557742000  (2022-02-22T19:22:22.000Z, i.e. 2:22:22 PM GMT-05:00)
+    // From the RFC: 017F22E2-79B0-7CC3-98C4-DC0C0C07398F, whose
+    // unix_ts_ms = 0x017F22E279B0 = 1645557742000 (2022-02-22T19:22:22Z, printed
+    // there as 2:22:22 PM GMT-05:00)
     const tv = decode("017f22e2-79b0-7cc3-98c4-dc0c0c07398f");
     console.log(`  UUID:        ${tv.uuid}`);
     console.log(`  unix_ts_ms:  ${tv.unix_ts_ms}  (expected: 1645557742000)`);

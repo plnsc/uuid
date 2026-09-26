@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 # =============================================================================
-# UUIDv7: Python implementation of RFC 9562, Section 5.7
+# UUIDv7: Python implementation of RFC 9562 §5.7
 # https://www.rfc-editor.org/rfc/rfc9562#section-5.7
-# https://datatracker.ietf.org/doc/html/rfc9562
-# https://en.wikipedia.org/wiki/Universally_unique_identifier
 #
-# Sibling implementations (uuid_v7.rb, uuid_v7.js, uuid_v7.lua, uuid_v7.rs,
-# uuid_v7.c)
-# share the same field layout and monotonicity contract.
+# Siblings (uuid_v7.rb, .js, .lua, .rs, .c) share this field layout and the same
+# monotonicity contract.
 #
 # 128-bit field layout (big-endian, MSB first):
 #
@@ -71,25 +68,25 @@ __all__ = [
 
 # ── Entropy pool ─────────────────────────────────────────────────────────────
 
-# os.urandom is a CSPRNG, matching Ruby's SecureRandom, JavaScript's Web Crypto,
-# and the /dev/urandom that Rust and C read. It replaces secrets.randbelow, which
-# is rejection sampling and measured ~3230 ns per draw: every caller here asks for
-# a power-of-two range, so a mask over pooled bytes is the same distribution for
+# os.urandom is a CSPRNG, like Ruby's SecureRandom, JavaScript's Web Crypto, and
+# the /dev/urandom Rust and C read. It replaces secrets.randbelow, which is
+# rejection sampling and measured ~3230 ns per draw: every caller here asks for a
+# power-of-two range, so masking pooled bytes gives the same distribution for
 # ~640 ns.
 #
-# All six siblings pool their entropy, and all six owe the same two answers:
+# All six siblings pool entropy, and all six owe the same two answers:
 #
 #   * fork() copies the pool, so parent and child would be served the same bytes
 #     and emit identical UUIDs. Python is the only sibling with an official hook
 #     for this, os.register_at_fork, so the guard costs nothing per draw, where
 #     Ruby has to compare the pid on every one.
 #   * the pool holds entropy not yet used, so bytes are zeroed as they are handed
-#     out, keeping the resident window to what is still unread. That needs a
-#     bytearray; the Ruby and Lua pools are immutable strings and cannot.
+#     out, keeping resident only what is still unread. That needs a bytearray;
+#     the Ruby and Lua pools are immutable strings and cannot.
 #
-# The pool is process-wide, so it needs the lock: the GIL does not make
-# read-modify-write on the offset atomic, and two threads must never be served the
-# same bytes.
+# The pool is process-wide and needs the lock: the GIL does not make
+# read-modify-write on the offset atomic, and two threads must never be served
+# the same bytes.
 
 _POOL_LEN = 4096
 _pool = bytearray()
@@ -135,10 +132,9 @@ class Generator:
     """Thread-safe UUIDv7 generator.
 
     Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
-    on each new millisecond, giving strict lexicographic ordering even within a
-    single millisecond; rand_b is always fresh random data. On counter overflow
-    (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
-    section permits.
+    on each new millisecond, so ordering is strict even within one millisecond;
+    rand_b is always fresh random data. On overflow (> 0xFFF) the timestamp is
+    bumped 1 ms, the "counter rollover" that section permits.
 
         gen = Generator()
         gen.generate()  # => "018f2e39-59b7-7e82-9c3a-4d5b9e2f1a60"
@@ -216,10 +212,10 @@ def _current_ms() -> int:
 
 
 def _assemble(unix_ts_ms: int, rand_a: int, rand_b: int) -> str:
-    """Pack all fields into a 128-bit integer and format the UUID string.
+    """Pack the fields into a 128-bit integer and format the UUID string.
 
-    Positions below count 127 as the MSB, the opposite of the RFC-style
-    ruler in the file header, which numbers bits from 0 left to right:
+    Positions count 127 as the MSB, the opposite of the RFC-style ruler in the
+    file header, which numbers bits from 0 left to right:
 
       [127..80]  unix_ts_ms   (48 bits)
       [79..76]   ver          ( 4 bits)  -> 0b0111
@@ -227,10 +223,10 @@ def _assemble(unix_ts_ms: int, rand_a: int, rand_b: int) -> str:
       [63..62]   var          ( 2 bits)  -> 0b10
       [61..0]    rand_b       (62 bits)
 
-    Keep the format call here. uuid_v7.rs and uuid_v7.c emit the nibbles by
-    hand, because their formatting libraries parse a template at run time, but
+    Keep the format call. uuid_v7.rs and uuid_v7.c emit the nibbles by hand
+    because their formatting libraries parse a template at run time, but
     CPython's is C underneath while a 32-step loop is not: hand-rolling measured
-    6.6x slower (913 ns against 6039).
+    6.6x slower (6039 ns against format's 913).
 
     :param unix_ts_ms: 48-bit millisecond timestamp
     :param rand_a: 12-bit value (counter or random)
@@ -255,15 +251,15 @@ def _timestamp(unix_ts_ms: int) -> datetime | None:
     """Convert `unix_ts_ms` to a UTC datetime, or None if it does not fit.
 
     `datetime` stops at year 9999, but unix_ts_ms is 48 bits and reaches
-    10889-08-02, so the top ~10% of the field (anything above
-    253402300799999) has no datetime at all. The Ruby, JavaScript, Lua, Rust,
-    and C siblings all render those instants fine; this is a Python-only limit.
+    10889-08-02, so the top ~10% of the field (above 253402300799999) has no
+    datetime at all. The other five siblings render those instants fine; this is
+    a Python-only limit.
 
-    Such a UUID is still a well-formed UUIDv7, so returning None keeps `decode`
-    raising only on genuinely invalid input and keeps `is_valid` a predicate:
+    Such a UUID is still well-formed, so returning None keeps `decode` raising
+    only on genuinely invalid input and keeps `is_valid` a predicate:
     OverflowError is not a ValueError, so letting it escape would make
     `is_valid` raise instead of answering False. Clamping to `datetime.max`
-    would be worse than None, since it would misreport the instant.
+    would be worse, since it would misreport the instant.
 
     :param unix_ts_ms: 48-bit millisecond timestamp
     :return: tz-aware UTC datetime, or None beyond year 9999
@@ -423,8 +419,9 @@ if __name__ == "__main__":
 
     # ── RFC 9562 Appendix A.6 test vector ────────────────────────────────────
     print("\n── RFC 9562 Appendix A.6 test vector ───────────────────────────────")
-    # The RFC provides:  017F22E2-79B0-7CC3-98C4-DC0C0C07398F
-    # unix_ts_ms = 0x017F22E279B0 = 1645557742000  (2022-02-22T19:22:22.000Z, i.e. 2:22:22 PM GMT-05:00)
+    # From the RFC: 017F22E2-79B0-7CC3-98C4-DC0C0C07398F, whose
+    # unix_ts_ms = 0x017F22E279B0 = 1645557742000 (2022-02-22T19:22:22Z, printed
+    # there as 2:22:22 PM GMT-05:00)
     test_vec = "017f22e2-79b0-7cc3-98c4-dc0c0c07398f"
     tv = decode(test_vec)
     print(f"  UUID:        {tv['uuid']}")

@@ -3,15 +3,15 @@
 --
 --   lua bench/bench.lua <op> <n>
 --
--- Prints "<op> <ns per op> <checksum>". Timing happens inside the process, so
--- startup is excluded, and the corpus for the read operations is built before the
--- clock starts. The checksum exists only so no operation can be optimized away.
+-- Prints "<op> <ns per op> <checksum>". Timing is inside the process, so startup
+-- is excluded, and the corpus for the read operations is built before the clock
+-- starts. The checksum only keeps operations from being optimized away.
 --
 -- The clock is os.clock, which is CPU time: standard Lua has no monotonic wall
--- clock, the same gap uuid_v7.lua works around for timestamps. For this workload
--- the two track each other, since nothing here blocks, but it is the one column
--- of the table not measured on a wall clock. bench/run.sh drives this; see
--- bench/README.md for the rules.
+-- clock, the same gap uuid_v7.lua works around for timestamps. Nothing here
+-- blocks, so the two track each other, but this is the one column of the table
+-- not measured on a wall clock. bench/run.sh drives this; the rules are in
+-- bench/README.md.
 
 local here = arg[0]:match("(.*/)") or "./"
 package.path = here .. "../?.lua;" .. package.path

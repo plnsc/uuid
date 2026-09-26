@@ -1,14 +1,10 @@
 #!/usr/bin/env lua
 -- =============================================================================
--- UUIDv7: Lua implementation of RFC 9562, Section 5.7
+-- UUIDv7: Lua implementation of RFC 9562 §5.7
 -- https://www.rfc-editor.org/rfc/rfc9562#section-5.7
--- https://datatracker.ietf.org/doc/html/rfc9562
--- https://en.wikipedia.org/wiki/Universally_unique_identifier
 --
--- Sibling implementations (uuid_v7.rb, uuid_v7.py, uuid_v7.js, uuid_v7.rs,
--- uuid_v7.c)
--- share the same field layout and monotonicity contract. Requires Lua 5.3+
--- (64-bit integers and bitwise operators).
+-- Siblings (uuid_v7.rb, .py, .js, .rs, .c) share this field layout and the same
+-- monotonicity contract. Requires Lua 5.3+ (64-bit integers, bitwise operators).
 --
 -- Four language limits force a divergence from the siblings:
 --   * No 128-bit integers, so the UUID is assembled per hex group (`assemble`).
@@ -73,7 +69,7 @@ local UUID_PATTERN = M.UUID_PATTERN
 
 -- ── Entropy source ───────────────────────────────────────────────────────────
 
--- Prefer /dev/urandom, a CSPRNG matching Ruby's SecureRandom, Python's os.urandom,
+-- Prefer /dev/urandom, a CSPRNG like Ruby's SecureRandom, Python's os.urandom and
 -- JavaScript's Web Crypto, and the same device Rust and C read. math.random is NOT
 -- cryptographically secure and is used only when /dev/urandom cannot be opened;
 -- M.entropy_source reports which is live.
@@ -83,15 +79,14 @@ M.entropy_source = urandom and "/dev/urandom" or "math.random (NOT a CSPRNG)"
 
 -- Bytes are drawn ahead, so one read serves many draws: 8 bytes at a time
 -- measured ~570 ns against ~170 ns amortized over a block this size. All six
--- siblings pool for that reason, and this is the one that cannot protect the
--- pool. fork() copies it, and parent and child would then be served the same
--- bytes and emit identical UUIDs; Python has os.register_at_fork, Ruby compares
+-- siblings pool for that reason, and this is the one pool that cannot be
+-- protected. fork() copies it, so parent and child would be served the same bytes
+-- and emit identical UUIDs; Python has os.register_at_fork, Ruby compares
 -- Process.pid, Rust and C compare getpid, and standard Lua has neither fork nor
--- any way to observe one. The exposure is not new, since io already read through
--- a buffered FILE *, but a host that forks after loading this module must reload
--- it in the child. For the same reason the block stays resident: Lua strings are
--- immutable, so consumed bytes cannot be zeroed the way they are in Python, Rust
--- and C.
+-- any way to observe one. The exposure is not new, io already reading through a
+-- buffered FILE *, but a host that forks after loading this module must reload it
+-- in the child. Consumed bytes also stay resident, Lua strings being immutable,
+-- so they cannot be zeroed as in Python, Rust and C.
 local POOL_LEN = 4096
 local pool, pool_off = "", POOL_LEN + 1
 
@@ -130,9 +125,9 @@ end
 -- current second via os.clock, re-anchoring on every os.time tick so drift
 -- stays under one second.
 --
--- Ordering never depends on this, since the generator never emits a timestamp below
--- the last one used. Only *accuracy* degrades; M.clock_source reports which
--- path is live.
+-- Ordering never depends on this, the generator never emitting a timestamp below
+-- the last one used. Only *accuracy* degrades; M.clock_source reports which path
+-- is live.
 local current_ms
 
 do
@@ -178,9 +173,9 @@ M.current_ms = current_ms
 
 -- ── Assembly ─────────────────────────────────────────────────────────────────
 
--- Packs all fields and formats the UUID string.
+-- Packs the fields and formats the UUID string.
 --
--- Ruby, Python, JavaScript, and Rust build one 128-bit integer, and C a pair of
+-- Ruby, Python, JavaScript and Rust build one 128-bit integer, and C a pair of
 -- them; Lua integers are 64-bit with no unsigned pairing helpers, so the value is
 -- emitted group by group. Groups align with field boundaries except rand_b, whose
 -- top 14 bits share group 4 with the variant:
@@ -191,10 +186,10 @@ M.current_ms = current_ms
 --   group 4 (4 hex)  var (2 bits) + rand_b[61..48] (14 bits)
 --   group 5 (12 hex) rand_b[47..0]
 --
--- Keep string.format here. uuid_v7.rs and uuid_v7.c emit the nibbles by hand,
--- because their formatting libraries parse a template at run time, but Lua's is C
+-- Keep string.format. uuid_v7.rs and uuid_v7.c emit the nibbles by hand because
+-- their formatting libraries parse a template at run time, but Lua's is C
 -- underneath while a 32-step loop is not: hand-rolling measured 5.6x slower
--- (1382 ns against 7691).
+-- (7691 ns against string.format's 1382).
 --
 -- @param unix_ts_ms integer 48-bit millisecond timestamp
 -- @param rand_a     integer 12-bit value (counter or random)
@@ -217,15 +212,14 @@ end
 -- UUIDv7 generator.
 --
 -- Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
--- on each new millisecond, giving strict lexicographic ordering even within a
--- single millisecond; rand_b is always fresh random data. On counter overflow
--- (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
--- section permits.
+-- on each new millisecond, so ordering is strict even within one millisecond;
+-- rand_b is always fresh random data. On overflow (> 0xFFF) the timestamp is
+-- bumped 1 ms, the "counter rollover" that section permits.
 --
--- No mutex, unlike the Ruby, Python, Rust, and C siblings: standard Lua has no
--- preemptive threads, and next_state never yields, so no coroutine can
--- interleave it. A preemptive host (OS threads sharing one lua_State) would
--- need external locking.
+-- No mutex, unlike the Ruby, Python, Rust and C siblings: standard Lua has no
+-- preemptive threads, and next_state never yields, so no coroutine can interleave
+-- it. A preemptive host (OS threads sharing one lua_State) would need external
+-- locking.
 --
 --   local gen = uuid_v7.Generator.new()
 --   gen:generate()  -- => "018f2e39-59b7-7e82-9c3a-4d5b9e2f1a60"
@@ -452,9 +446,9 @@ if modname == nil then
   print("  Sorted?  " .. tostring(ordered))
 
   -- ── Coroutine interleaving test ──────────────────────────────────────────
-  -- Standard Lua has no preemptive threads, so this stands in for the Ruby,
-  -- Python, Rust, and C thread-safety test: four coroutines resumed round-robin,
-  -- interleaving their calls into the shared generator.
+  -- No preemptive threads, so this stands in for the Ruby, Python, Rust and C
+  -- thread-safety test: four coroutines resumed round-robin, interleaving their
+  -- calls into the shared generator.
   rule("Coroutine interleaving: 4 coroutines × 5_000 UUIDs")
   local buckets = {}
   local workers = {}
@@ -512,8 +506,9 @@ if modname == nil then
 
   -- ── RFC 9562 Appendix A.6 test vector ────────────────────────────────────
   rule("RFC 9562 Appendix A.6 test vector")
-  -- The RFC provides:  017F22E2-79B0-7CC3-98C4-DC0C0C07398F
-  -- unix_ts_ms = 0x017F22E279B0 = 1645557742000  (2022-02-22T19:22:22.000Z, i.e. 2:22:22 PM GMT-05:00)
+  -- From the RFC: 017F22E2-79B0-7CC3-98C4-DC0C0C07398F, whose
+  -- unix_ts_ms = 0x017F22E279B0 = 1645557742000 (2022-02-22T19:22:22Z, printed
+  -- there as 2:22:22 PM GMT-05:00)
   local tv = M.decode("017f22e2-79b0-7cc3-98c4-dc0c0c07398f")
   print("  UUID:        " .. tv.uuid)
   print("  unix_ts_ms:  " .. tv.unix_ts_ms .. "  (expected: 1645557742000)")

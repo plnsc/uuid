@@ -2,82 +2,69 @@
 
 ## O que é
 
-**UUID** é um identificador de **128 bits** que distingue informações de forma única em sistemas de computação, sem autoridade central que coordene sua geração.
+Um identificador de **128 bits** que distingue informações de forma única, sem autoridade central coordenando a geração. Escreve-se como 32 caracteres hexadecimais em 5 grupos:
 
-- **Representação**: 32 caracteres hexadecimais em 5 grupos separados por hífens:
-  ```
-  xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-  ```
-  Exemplo: `550e8400-e29b-41d4-a716-446655440000`
-- **Unicidade**: a probabilidade de colisão é tão baixa que, na prática, UUIDs aleatórios são considerados únicos globalmente.
+```
+xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+550e8400-e29b-41d4-a716-446655440000
+```
 
-### Usos comuns
-- Identificar registros em bancos de dados (alternativa a IDs sequenciais)
-- Identificar sessões, transações ou requisições em sistemas distribuídos
-- Nomear arquivos ou recursos de forma única
-- Evitar conflitos ao combinar dados de múltiplas fontes (não depende de contador central)
+A probabilidade de colisão é baixa o bastante para, na prática, tratá-los como únicos globalmente. Daí os usos típicos: chave de registro em banco (alternativa a IDs sequenciais), identificação de sessões, transações e requisições em sistemas distribuídos, nomes únicos de arquivos e junção de dados de várias fontes sem contador compartilhado.
 
 ---
 
 ## Especificação: RFC 9562
 
-A **RFC 9562** ("Universally Unique IDentifiers (UUIDs)"), publicada pela IETF em **abril de 2024**, **torna obsoleta a RFC 4122**. Seu Apêndice A traz vetores de teste com exemplos reais para cada versão.
+Publicada pela IETF em **abril de 2024**, a RFC 9562 ("Universally Unique IDentifiers (UUIDs)") **torna obsoleta a RFC 4122**. Seu Apêndice A traz vetores de teste para cada versão.
 
-### Fontes oficiais
 | Formato | Link |
 |---|---|
 | HTML | https://www.rfc-editor.org/rfc/rfc9562.html |
 | Texto puro | https://www.rfc-editor.org/rfc/rfc9562.txt |
 | PDF | https://www.rfc-editor.org/rfc/rfc9562.pdf |
-| IETF Datatracker (histórico/status) | https://datatracker.ietf.org/doc/html/rfc9562 |
+| Datatracker (histórico/status) | https://datatracker.ietf.org/doc/html/rfc9562 |
 
----
-
-## Versões definidas
+### Versões definidas
 
 | Versão | Nome | Descrição |
 |---|---|---|
 | **v1** | Gregorian Time | Timestamp + endereço MAC (node) + sequência de clock |
 | **v2** | DCE Security | Como a v1, mas parte do campo vira domínio local (UID/GID). Raramente implementada |
-| **v3** | Name-based (MD5) | Hash MD5 de um namespace + nome. Determinística |
-| **v4** | Random | Números aleatórios/pseudoaleatórios. A mais usada atualmente |
-| **v5** | Name-based (SHA-1) | Igual à v3, mas com SHA-1 (mais segura contra colisões) |
-| **v6** | Reordered Gregorian Time | Reordena os bits de timestamp da v1 para gerar UUIDs monotonicamente crescentes |
-| **v7** | Unix Epoch Time | Timestamp Unix em milissegundos + bytes aleatórios; ordenável, ideal para chaves de banco |
-| **v8** | Custom | Mantém o formato do UUID, mas deixa o conteúdo livre para usos específicos |
+| **v3** | Name-based (MD5) | Hash MD5 de namespace + nome. Determinística |
+| **v4** | Random | Bits aleatórios/pseudoaleatórios. A mais usada hoje |
+| **v5** | Name-based (SHA-1) | Igual à v3, com SHA-1 (mais resistente a colisões) |
+| **v6** | Reordered Gregorian Time | Timestamp da v1 reordenado, o que torna os UUIDs crescentes |
+| **v7** | Unix Epoch Time | Timestamp Unix em ms + bits aleatórios; ordenável, ideal para chave de banco |
+| **v8** | Custom | Mantém o formato, deixa o conteúdo livre |
 
-### Valores especiais
-- **Nil UUID**: todos os bits zerados (`00000000-0000-0000-0000-000000000000`)
-- **Max UUID**: todos os bits em 1 (novidade da RFC 9562)
+Dois valores especiais: **Nil UUID** (todos os bits em 0) e **Max UUID** (todos em 1, novidade da RFC 9562).
 
 ---
 
 ## Estrutura de bits comparada
 
-Todo UUID tem 128 bits, com **4 bits de versão** e **2 bits de variante** (a variante da RFC 9562 usa os bits `10`).
+Todo UUID tem 128 bits, dos quais **4 de versão** e **2 de variante** (na RFC 9562, a variante é `10`).
 
 | Versão | Composição dos 128 bits |
 |---|---|
 | **v1** | `time_low`(32) + `time_mid`(16) + `version`(4) + `time_hi`(12) + `variant`(2) + `clock_seq`(14) + `node/MAC`(48) |
-| **v6** | Mesmos campos da v1, com o timestamp reordenado do mais para o menos significativo (`time_hi` → `time_mid` → `time_low`) |
+| **v6** | Mesmos campos da v1, timestamp reordenado do mais para o menos significativo (`time_hi` → `time_mid` → `time_low`) |
 | **v7** | `unix_ts_ms`(48) + `version`(4) + `rand_a`(12) + `variant`(2) + `rand_b`(62) |
-| **v4** | Mesmo esqueleto da v7, com todos os campos de dados aleatórios: `random`(48) + `version`(4) + `random`(12) + `variant`(2) + `random`(62) |
+| **v4** | Mesmo esqueleto da v7, só com dados aleatórios: `random`(48) + `version`(4) + `random`(12) + `variant`(2) + `random`(62) |
 
-**Observação-chave**: v1 e v6 têm os mesmos campos (muda só a ordem do timestamp); v7 e v4 têm o mesmo esqueleto de bits (muda só se o conteúdo é timestamp ou aleatório).
+Ou seja: v1 e v6 têm os mesmos campos (muda a ordem do timestamp), v7 e v4 têm o mesmo esqueleto (muda se o conteúdo é tempo ou aleatoriedade).
 
-> No código, essa tabela corresponde a `assemble` (campos → UUID) e `decode` (o inverso). O diagrama de bits completo está no cabeçalho de cada implementação.
+> No código, esta tabela é `assemble` (campos → UUID) e `decode` (o inverso). O diagrama completo está no cabeçalho de cada implementação.
 
 ---
 
 ## Como a v7 gera monotonicidade
 
-O timestamp Unix em milissegundos ocupa os **48 bits mais significativos** do UUIDv7, os primeiros a serem comparados numa ordenação byte a byte (ou lexicográfica em hexadecimal).
+O timestamp em milissegundos ocupa os **48 bits mais significativos**, os primeiros comparados numa ordenação byte a byte (ou lexicográfica em hexadecimal). Logo, **ordenar pelo valor bruto já dá a ordem cronológica de criação**, sem lógica extra. `rand_a` e `rand_b` só desempatam UUIDs do mesmo milissegundo.
 
-Logo, **ordenar pelo valor bruto já resulta na ordem cronológica de criação**, sem lógica adicional. Os bits aleatórios (`rand_a` e `rand_b`) só desempatam UUIDs do mesmo milissegundo: não alteram a ordem geral, apenas evitam que dois UUIDs do mesmo instante sejam idênticos.
+Isso faz da v7 uma boa chave primária: as inserções chegam no fim do índice B-tree, evitando a fragmentação causada pelas posições aleatórias da v4.
 
-Isso torna a v7 adequada como chave primária, por favorecer índices B-tree, evitando a fragmentação que inserções em posições aleatórias causam na v4.
-
-> As implementações deste repositório vão além da RFC e garantem ordenação **estrita** mesmo dentro do mesmo milissegundo, usando `rand_a` como contador em vez de bits aleatórios (Método 2, RFC 9562 §6.2). Veja `Generator` e `next_state`.
+> As implementações deste repositório vão além da RFC e garantem ordenação **estrita** mesmo dentro do mesmo milissegundo, usando `rand_a` como contador (Método 2, RFC 9562 §6.2). Veja `Generator` e `next_state`.
 
 ---
 
@@ -87,21 +74,19 @@ UUID identifica, não autoriza. A RFC é explícita (§8, Security Consideration
 
 > Implementations SHOULD NOT assume that UUIDs are hard to guess. For example, they MUST NOT be used as security capabilities (identifiers whose mere possession grants access).
 
-Link de reset de senha e ID de sessão pedem um token dedicado. Se o identificador precisa participar de alguma operação de segurança, a RFC recomenda a v4.
+Link de reset de senha e ID de sessão pedem um token dedicado; se o identificador precisa participar de uma operação de segurança, a RFC recomenda a v4.
 
-Na v7 isso é fácil de ver, porque quase nada nela é secreto: `unix_ts_ms` é o relógio de parede, `version` e `variant` são constantes, e `rand_a` é um contador sequencial (Método 2). Toda a imprevisibilidade está nos 62 bits de `rand_b`.
+Na v7 isso é visível, porque quase nada nela é secreto: `unix_ts_ms` é o relógio de parede, `version` e `variant` são constantes, `rand_a` é um contador sequencial (Método 2). Toda a imprevisibilidade está nos 62 bits de `rand_b`.
 
-Daí a RFC recomendar (SHOULD, §6.9) um **CSPRNG**: um gerador em que prever a próxima saída seja computacionalmente inviável mesmo para quem observou as anteriores. Um gerador comum pode ser estatisticamente impecável e ainda assim ter estado interno recuperável a partir de poucas saídas. Recuperado o estado, toda a sequência passada e futura fica determinada: quem viu alguns UUIDs do processo calcula os demais.
-
-As seis implementações usam CSPRNG. O único caminho degradado está descrito nas particularidades do Lua, adiante.
+Daí a RFC recomendar (SHOULD, §6.9) um **CSPRNG**, gerador em que prever a próxima saída é computacionalmente inviável mesmo para quem observou as anteriores. Um gerador comum pode ser estatisticamente impecável e ainda ter estado interno recuperável a partir de poucas saídas; recuperado o estado, toda a sequência passada e futura fica determinada. As seis implementações usam CSPRNG, e o único caminho degradado é o do Lua, descrito adiante.
 
 ### Pool de entropia
 
-As seis sacam os bits aleatórios de um pool reabastecido em blocos de 4096 bytes, em vez de chamar o CSPRNG a cada UUID. O motivo é medido: um saque por chamada custa de ~570 ns (Lua) a ~3230 ns (Python, cujo `secrets.randbelow` faz amostragem com rejeição), contra 23 a 640 ns com pool. No `generate` completo, a diferença é de 4,8x no JavaScript, 2,4x no Rust, 1,5x no Python, 1,2x no Ruby, 1,14x no Lua e 1,13x no C. As três mais lentas ganham menos porque nelas o gargalo é a montagem da string, não a entropia.
+As seis sacam bits de um pool reabastecido em blocos de 4096 bytes, em vez de chamar o CSPRNG por UUID. O motivo é medido: um saque por chamada custa de ~570 ns (Lua) a ~3230 ns (Python, cujo `secrets.randbelow` faz amostragem com rejeição), contra 23 a 640 ns com pool. No `generate` completo, o ganho é de 4,8x no JavaScript, 2,4x no Rust, 1,5x no Python, 1,2x no Ruby, 1,14x no Lua e 1,13x no C. As três mais lentas ganham menos porque nelas o gargalo é a montagem da string.
 
-Mascarar é válido porque todo chamador pede uma faixa potência de dois, então não há viés de módulo a corrigir. É também por isso que Python e Ruby deixaram de usar as APIs de faixa (`secrets.randbelow`, `SecureRandom.random_number`): mesma distribuição, um terço a um quinto do custo.
+Mascarar bits é válido porque todo chamador pede uma faixa potência de dois, sem viés de módulo a corrigir. É também por isso que Python e Ruby abandonaram as APIs de faixa (`secrets.randbelow`, `SecureRandom.random_number`): mesma distribuição, um terço a um quinto do custo.
 
-**Um pool é perigoso diante de `fork()`**, e isso não é hipótese. O `fork` duplica o pool, então pai e filho recebem os mesmos bytes e emitem UUIDs **idênticos**. A implementação em C lia através de um `FILE *`, e o buffer do stdio fazia exatamente isso: pai e filho produziam o mesmo UUID em toda execução. Cada linguagem se defende com o que tem:
+**Um pool é perigoso diante de `fork()`**, e isso não é hipótese: o `fork` duplica o pool, então pai e filho recebem os mesmos bytes e emitem UUIDs **idênticos**. A implementação em C lia através de um `FILE *`, e o buffer do stdio fazia exatamente isso, em toda execução. Cada linguagem se defende com o que tem:
 
 | | proteção | custo por saque |
 |---|---|---|
@@ -110,13 +95,13 @@ Mascarar é válido porque todo chamador pede uma faixa potência de dois, entã
 | Rust | compara `std::process::id()` | ~2 ns |
 | C | compara `getpid()` | ~3 ns |
 | JavaScript | dispensa: Node não forka, e cada worker thread tem isolate e pool próprios | nenhum |
-| Lua | **nenhuma possível**: não há `fork` nem como observá-lo. O risco é latente e não é pior que o do buffer do stdio que o pool substituiu, mas um host que forka precisa recarregar o módulo no filho |
+| Lua | **nenhuma possível**: não há `fork` nem como observá-lo. Risco latente, não pior que o do buffer do stdio que o pool substituiu, mas um host que forka precisa recarregar o módulo no filho |
 
-Os bytes já consumidos são zerados na saída em Python, Rust e C, de modo que só entropia ainda não lida permanece na memória. Ruby e Lua não conseguem: seus pools são strings imutáveis.
+Python, Rust e C zeram os bytes já consumidos, deixando na memória só entropia ainda não lida. Ruby e Lua não conseguem: seus pools são strings imutáveis.
 
 ---
 
-## Exemplo prático: um UUIDv7 real, campo a campo
+## Exemplo prático, campo a campo
 
 UUID gerado em **13/09/2026 às 02:26:10.253 UTC**:
 
@@ -126,11 +111,11 @@ UUID gerado em **13/09/2026 às 02:26:10.253 UTC**:
 
 | Campo | Valor hex | Bits | Significado |
 |---|---|---|---|
-| `unix_ts_ms` | `01a098961ecd` | 48 | Timestamp Unix em milissegundos → 13/09/2026 02:26:10.253 UTC |
-| `version` | `7` | 4 | Sempre `7`; é esse nibble, logo após o segundo hífen, que identifica a versão, a forma mais rápida de reconhecê-la só olhando a string |
-| `rand_a` | `b03` | 12 | Bits aleatórios (sem significado especial) |
-| `variant` | `10xx` (primeiro nibble `b` = `1011`) | 2 | Os 2 bits mais significativos do nibble indicam a variante RFC 9562 (`10`); por isso o primeiro caractere desse grupo fica sempre entre `8` e `b` |
-| `rand_b` | `b26376dea2187a4` | 62 | Bits aleatórios; reduzem a chance de colisão entre UUIDs do mesmo milissegundo |
+| `unix_ts_ms` | `01a098961ecd` | 48 | Timestamp Unix em ms → 13/09/2026 02:26:10.253 UTC |
+| `version` | `7` | 4 | Sempre `7`. É este nibble, logo após o segundo hífen, que identifica a versão só olhando a string |
+| `rand_a` | `b03` | 12 | Bits aleatórios |
+| `variant` | `10xx` (nibble `b` = `1011`) | 2 | Os 2 bits mais significativos do nibble marcam a variante RFC 9562 (`10`), por isso o primeiro caractere do grupo fica sempre entre `8` e `b` |
+| `rand_b` | `b26376dea2187a4` | 62 | Bits aleatórios; reduzem a colisão entre UUIDs do mesmo milissegundo |
 
 > `decode` reproduz esta tabela para qualquer UUIDv7:
 >
@@ -154,9 +139,9 @@ Seis implementações da **v7**, cada uma usando apenas a biblioteca padrão da 
 | [`uuid_v7.rs`](uuid_v7.rs) | Rust 1.70+ | `rustc --edition 2021 -O uuid_v7.rs -o uuid_v7_rs && ./uuid_v7_rs` |
 | [`uuid_v7.c`](uuid_v7.c) | C11 + POSIX | `cc -std=c11 -O2 -pthread uuid_v7.c -o uuid_v7_c && ./uuid_v7_c` |
 
-As seis compartilham o mesmo layout de campos, a mesma monotonicidade e a mesma saída. São **compatíveis entre si**: um UUID gerado por qualquer uma decodifica de forma idêntica nas outras cinco.
+As seis compartilham layout de campos, monotonicidade e saída, e são **compatíveis entre si**: um UUID gerado por qualquer uma decodifica igual nas outras cinco.
 
-Rust e C são os dois casos compilados: não há `Cargo.toml` nem makefile, então o compilador é chamado direto no arquivo, que serve tanto de binário da demonstração quanto de módulo reaproveitável (`mod uuid_v7;` no Rust, `-DUUIDV7_NO_MAIN` no C). Os dois binários têm nomes distintos de propósito, para que compilar um não sobrescreva o outro.
+Rust e C são os casos compilados. Não há `Cargo.toml` nem makefile: o compilador é chamado direto no arquivo, que serve de binário da demonstração e de módulo reaproveitável (`mod uuid_v7;` no Rust, `-DUUIDV7_NO_MAIN` no C). Os dois binários têm nomes distintos de propósito, para que compilar um não sobrescreva o outro.
 
 ### API comum
 
@@ -170,11 +155,11 @@ A mesma superfície nas seis, mudando só a grafia (JavaScript usa camelCase; C 
 | `decode` | Decompõe um UUIDv7 nos seus campos |
 | `valid?` / `is_valid` / `isValid` | `true` se for um UUIDv7 bem formado |
 
-No Rust, que não tem exceções, `decode` devolve `Result<Decoded, DecodeError>` e os campos vêm numa struct, não num mapa; `is_valid` é esse `Result` reduzido a booleano.
+Três desvios que valem saber de antemão:
 
-O campo `timestamp` do Python é o único que pode vir `None`: o `datetime` para no ano 9999, enquanto os 48 bits de `unix_ts_ms` alcançam 10889-08-02. O UUID continua válido, só não tem data representável; as outras cinco imprimem o instante normalmente.
-
-No C, que também não tem exceções, `uuidv7_decode` devolve um código de status e preenche uma struct que **você** fornece. Nada ali aloca: todo produtor escreve num buffer seu de `UUIDV7_SIZE` bytes.
+- **Rust** não tem exceções: `decode` devolve `Result<Decoded, DecodeError>`, com os campos numa struct em vez de um mapa, e `is_valid` é esse `Result` reduzido a booleano.
+- **C** também não: `uuidv7_decode` devolve um código de status e preenche uma struct que **você** fornece. Nada ali aloca, todo produtor escreve num buffer seu de `UUIDV7_SIZE` bytes.
+- O `timestamp` do **Python** é o único campo que pode vir `None`: o `datetime` para no ano 9999, enquanto os 48 bits de `unix_ts_ms` alcançam 10889-08-02. O UUID continua válido, só não tem data representável; as outras cinco imprimem o instante normalmente.
 
 ```ruby
 require_relative 'uuid_v7'
@@ -215,37 +200,63 @@ int main(void) {
 }
 ```
 
-### Testes e benchmark
+### Testes
 
-Não há framework: cada arquivo traz uma demonstração autocontida no final, executada ao rodá-lo diretamente (no Rust e no C, ao compilá-lo e executar o binário). Ela verifica geração, decodificação, ordenação de 100 000 UUIDs, acesso concorrente e o vetor do Apêndice A.6 da RFC.
+Não há framework: cada arquivo traz uma demonstração autocontida no final, executada ao rodá-lo direto (no Rust e no C, ao compilar e executar o binário). Ela verifica geração, decodificação, ordenação de 100 000 UUIDs, acesso concorrente e o vetor do Apêndice A.6 da RFC.
 
-> Os resultados saem como `true`/`false` e `✓`/`✗`: o processo **não** retorna código de erro em caso de falha, então é preciso ler a saída.
+> Os resultados saem como `true`/`false` e `✓`/`✗`, e o processo **não** retorna código de erro em caso de falha. É preciso ler a saída.
 
-Para desempenho há o `bench/`, com um driver por linguagem e o runner `bench/run.sh`; veja *Desempenho*, adiante.
+---
 
-### Particularidades do JavaScript
+## Particularidades de cada linguagem
 
-JavaScript não tem tipo inteiro, seus números são exatos só até 2^53 e roda num único event loop. As três consequências estão documentadas no cabeçalho de [`uuid_v7.js`](uuid_v7.js):
+Em todos os casos, a limitação e o contorno estão documentados no cabeçalho do arquivo.
 
-- a montagem usa `BigInt`, e por isso `decode` devolve `rand_b` (62 bits) como `BigInt`; `unix_ts_ms` (48) e `rand_a` (12) cabem num `Number` e continuam assim;
-- não há mutex, porque só existe um event loop (worker threads recebem isolate e gerador próprios);
+### JavaScript
+
+Não tem tipo inteiro (números são exatos só até 2^53) e roda num único event loop:
+
+- a montagem usa `BigInt`, então `decode` devolve `rand_b` (62 bits) como `BigInt`; `unix_ts_ms` (48) e `rand_a` (12) cabem num `Number`;
+- não há mutex, porque há um só event loop (worker threads recebem isolate e gerador próprios);
 - `generateBulk(3.0)` é aceito, já que `3.0` e `3` são o mesmo valor.
 
-A entropia vem de `crypto.getRandomValues`, sem fallback: ou há CSPRNG, ou o código falha, nunca degradando silenciosamente para `Math.random`.
+A entropia vem de `crypto.getRandomValues`, sem fallback: ou há CSPRNG, ou o código falha, nunca degradando para `Math.random`.
 
-### Particularidades do Lua
+### Lua
 
-Lua não tem inteiros de 128 bits, relógio de milissegundos na biblioteca padrão, nem threads preemptivas. As três limitações estão contornadas e documentadas no cabeçalho de [`uuid_v7.lua`](uuid_v7.lua):
+Não tem inteiros de 128 bits, relógio de milissegundos na biblioteca padrão nem threads preemptivas:
 
-- o UUID é montado grupo hexadecimal por grupo hexadecimal, em vez de um único inteiro de 128 bits;
-- o relógio usa `luaposix`/`luasocket` se instalados; caso contrário, interpola dentro do segundo (a ordenação nunca depende disso, só a precisão do timestamp);
+- o UUID é montado grupo hexadecimal por grupo hexadecimal;
+- o relógio usa `luaposix`/`luasocket` se instalados, senão interpola dentro do segundo (a ordenação nunca depende disso, só a precisão do timestamp);
 - não há mutex, porque não há concorrência preemptiva a proteger.
 
-O pool de entropia do Lua é o único das seis que não tem como se proteger de `fork` (veja *Pool de entropia*), e o único, junto com o do Ruby, que não pode zerar os bytes consumidos. A entropia vem de `/dev/urandom`. O `math.random` entra só se ele não puder ser aberto e **não é criptograficamente seguro** (veja *Segurança e imprevisibilidade*); é a exceção prevista em §6.9, "when a suitable CSPRNG is unavailable in the execution environment". Os campos `entropy_source` e `clock_source` informam qual caminho está ativo.
+A entropia vem de `/dev/urandom`; `math.random` entra só se ele não puder ser aberto e **não é criptograficamente seguro**, sendo a exceção prevista em §6.9 ("when a suitable CSPRNG is unavailable in the execution environment"). `entropy_source` e `clock_source` informam qual caminho está ativo. É também o único pool das seis sem defesa contra `fork` e, junto com o do Ruby, o único que não zera bytes consumidos.
 
-### Desempenho
+### Rust
 
-`bench/run.sh` compara as seis nas quatro operações públicas e imprime uma tabela. Medição de referência (MacBook Intel i5-8259U 2,3 GHz, macOS 15.7.7; Ruby 4.0.3, Python 3.14.7, Node 26.4.0, Lua 5.5.1, rustc 1.98.1 com `-O`, Apple clang 17 com `-O2`), n = 100 000, mínimo de 5 execuções, **nanossegundos por operação**:
+Tem `u128` nativo, então a montagem dispensa `BigInt` e grupos separados. As limitações estão na biblioteca padrão, que não traz CSPRNG, regex nem calendário:
+
+- a entropia é `/dev/urandom` lido direto, sem fallback (como no JavaScript, não como no Lua): faltando o dispositivo, o processo entra em pânico. É o que restringe esta implementação, como a do C, a POSIX. O pool é `thread_local!` com inicializador `const`, então dispensa lock;
+- o formato 8-4-4-4-12 é conferido dígito a dígito em `parse_hex128`, no lugar da regex que as outras quatro têm;
+- `decode` devolve o `SystemTime` cru, porque `std` não sabe convertê-lo em data civil; a aritmética de calendário vive em `utc_string`, usada só na demonstração.
+
+### C
+
+Não tem inteiro de 128 bits no padrão (`__int128` é extensão), nem exceções, strings gerenciadas, regex, CSPRNG, tabela hash ou mutex portátil:
+
+- o valor é um par de `uint64_t`, e a divisão é exata: a variante fica na fronteira do octeto 8, que é também a metade, então cada half guarda campos inteiros;
+- `uuidv7_decode` devolve `uuidv7_status` e preenche struct do chamador; `uuidv7_strerror` faz o papel da mensagem de exceção;
+- quem produz UUID escreve num buffer do chamador (`uuidv7_str`, 36 caracteres mais o terminador);
+- o lock é `pthread_mutex_t`, porque o `<threads.h>` do C11 é opcional e a libc da Apple não o traz (`__STDC_NO_THREADS__`);
+- o formato é conferido dígito a dígito em `uuidv7_parse`, e a demonstração checa unicidade com `qsort` mais comparação de vizinhos, por não haver tabela hash.
+
+A entropia vem de `/dev/urandom` lido por descritor cru, e não por `FILE *`, para o stdio não pôr um segundo buffer sem proteção de fork atrás do pool. Sem fallback: faltando o dispositivo, o processo aborta. O teste de threads é o único do repositório verificável por máquina: com `cc -fsanitize=thread` a demonstração roda sem corrida detectada.
+
+---
+
+## Desempenho
+
+`bench/run.sh` compara as seis nas quatro operações públicas. Referência (MacBook Intel i5-8259U 2,3 GHz, macOS 15.7.7; Ruby 4.0.3, Python 3.14.7, Node 26.4.0, Lua 5.5.1, rustc 1.98.1 com `-O`, Apple clang 17 com `-O2`), n = 100 000, mínimo de 5 execuções, **nanossegundos por operação**:
 
 | operação | C | Rust | JS | Lua | Ruby | Python |
 |---|---|---|---|---|---|---|
@@ -254,41 +265,19 @@ O pool de entropia do Lua é o único das seis que não tem como se proteger de 
 | `decode` | 299 | **260** | 1094 | 6377 | 2973 | 4088 |
 | predicado | 98 | **38** | 1092 | 6422 | 2928 | 4133 |
 
-O que a tabela mostra, além da ordem esperada:
+O que a tabela mostra além da ordem esperada:
 
-- desde o [pool de entropia](#pool-de-entropia), o gargalo do `generate` deixou de ser o CSPRNG e passou a ser a montagem da string. É por isso que Ruby, Python e Lua ficam nos ~3 µs: quase tudo ali é formatação de inteiro grande e concatenação;
-- **nas duas compiladas, a montagem não usa a biblioteca de formatação.** Era ela o custo: em Rust, `format!("{:032x}")` mais um segundo `format!` para os hífens custavam 759 ns dos 853 do `generate`; em C, o `snprintf` custava 245 dos 348, por interpretar o template em tempo de execução. Emitindo os nibbles sobre as larguras de grupo, o Rust caiu para 164 ns e o C para 105, sem `unsafe` e sem mudar a saída. Nas quatro interpretadas o mesmo truque é **regressão**, de 5,6x no Lua a 11,8x no JS (6,6x no Python, 9,7x no Ruby), porque lá o `format` é código nativo e o laço de 32 passos não é;
-- o predicado do Rust é o mais rápido das seis (38 ns) porque `is_valid` deixou de passar pelo `decode`: construía o resultado inteiro, com duas alocações, só para descartar. O do C já fazia isso, saindo antes de preencher a struct quando recebe `NULL`. Nas outras quatro, predicado ≈ `decode`;
-- o `decode` do Lua é o mais lento das seis por ser o único que formata o timestamp com `os.date` a cada chamada, em vez de só construir um objeto de tempo;
-- o Rust fica ~60 ns atrás do C no `generate`, e essa diferença é uma alocação de heap de 36 bytes: ele devolve uma `String` própria, como cinco das seis, enquanto o C escreve no buffer do chamador. É escolha de API, não custo de segurança de ponteiro. A verificação de limites, por sua vez, não aparece: a versão com iteradores ficou mais rápida que a com tabela de índices, as duas em safe Rust.
+- desde o [pool de entropia](#pool-de-entropia), o gargalo do `generate` é a montagem da string, não o CSPRNG. Por isso Ruby, Python e Lua ficam nos ~3 µs: quase tudo ali é formatação de inteiro grande e concatenação;
+- **nas duas compiladas, a montagem não usa a biblioteca de formatação**, que era o custo: em Rust, `format!("{:032x}")` mais um segundo `format!` para os hífens custavam 759 ns dos 853 do `generate`; em C, o `snprintf` custava 245 dos 348, por interpretar o template em tempo de execução. Emitindo os nibbles sobre as larguras de grupo, Rust caiu para 164 ns e C para 105, sem `unsafe` e sem mudar a saída. Nas quatro interpretadas o mesmo truque é **regressão**, de 5,6x no Lua a 11,8x no JS (6,6x no Python, 9,7x no Ruby), porque lá o `format` é código nativo e o laço de 32 passos não é;
+- o predicado do Rust é o mais rápido (38 ns) porque `is_valid` deixou de passar pelo `decode`, que construía o resultado inteiro, com duas alocações, só para descartar. O do C já saía antes de preencher a struct ao receber `NULL`. Nas outras quatro, predicado ≈ `decode`;
+- o `decode` do Lua é o mais lento por ser o único que formata o timestamp com `os.date` a cada chamada, em vez de só construir um objeto de tempo;
+- os ~60 ns entre Rust e C no `generate` são uma alocação de heap de 36 bytes: o Rust devolve uma `String` própria, como cinco das seis, enquanto o C escreve no buffer do chamador. É escolha de API, não custo de segurança de ponteiro, que nem aparece: a versão com iteradores ficou mais rápida que a com tabela de índices, as duas em safe Rust.
 
-As regras de que os números dependem (cronometragem dentro do processo, mínimo em vez de média, `black_box` e `volatile` para o otimizador não apagar as chamadas, e a ressalva de que a coluna do Lua é tempo de CPU) estão em [`bench/README.md`](bench/README.md). **Remeça na sua máquina** em vez de citar esta tabela: ela vale para uma máquina e uma execução.
-
-### Particularidades do C
-
-C não tem inteiro de 128 bits no padrão (`__int128` é extensão de compilador), nem exceções, nem strings gerenciadas, nem regex, nem CSPRNG, nem tabela hash, nem mutex portátil. As soluções estão documentadas no cabeçalho de [`uuid_v7.c`](uuid_v7.c):
-
-- o valor é um par de `uint64_t`, e a divisão é exata: a variante fica na fronteira do octeto 8, que é também a metade, então cada half guarda campos inteiros;
-- `uuidv7_decode` devolve `uuidv7_status` e preenche uma struct passada pelo chamador; `uuidv7_strerror` cumpre o papel que nas outras é a mensagem da exceção;
-- quem produz UUID escreve num buffer do chamador (`uuidv7_str`, 36 caracteres mais o terminador), então nada aloca;
-- o lock é `pthread_mutex_t`, porque o `<threads.h>` do C11 é opcional e a libc da Apple não o traz (`__STDC_NO_THREADS__`);
-- o formato é conferido dígito a dígito em `uuidv7_parse`, e a demonstração checa unicidade com `qsort` mais comparação de vizinhos, por não haver tabela hash na biblioteca padrão.
-
-A entropia vem de `/dev/urandom` lido por descritor cru, e não por `FILE *`, justamente para o stdio não pôr um segundo buffer sem proteção de fork atrás do pool. Não há fallback: faltando o dispositivo, o processo aborta, a mesma postura do Rust e do JavaScript. Isso, mais `clock_gettime` e pthreads, restringe esta implementação a POSIX. O teste de threads é o único do repositório que pode ser verificado por máquina: com `cc -fsanitize=thread` a demonstração roda sem nenhuma corrida detectada.
-
-### Particularidades do Rust
-
-Rust tem `u128` nativo, então a montagem não precisa de `BigInt` nem de grupos separados. As limitações estão do outro lado: a biblioteca padrão não traz CSPRNG, nem regex, nem calendário. As três estão contornadas e documentadas no cabeçalho de [`uuid_v7.rs`](uuid_v7.rs):
-
-- a entropia vem de `/dev/urandom` lido direto, sem fallback (como no JavaScript, não como no Lua): ou há CSPRNG, ou o processo entra em pânico. É o que restringe esta implementação, como a do C, a POSIX; o pool é `thread_local!` com inicializador `const`, então dispensa lock;
-- o formato 8-4-4-4-12 é conferido dígito a dígito em `parse_hex128`, no lugar da regex que as outras quatro têm (o C faz o mesmo, pelo mesmo motivo);
-- `decode` devolve o `SystemTime` cru, porque `std` não sabe convertê-lo em data civil; a aritmética de calendário vive em `utc_string`, usada só para imprimir a demonstração.
-
-Sendo compilada, a linguagem também resolve em tempo de build o que as quatro interpretadas decidem em tempo de execução: `rustc` no arquivo produz o binário da demonstração, enquanto `mod uuid_v7;` expõe a API e deixa a `main` de lado. O C faz o mesmo com `-DUUIDV7_NO_MAIN`.
+As regras de que esses números dependem estão em [`bench/README.md`](bench/README.md). **Remeça na sua máquina** em vez de citar a tabela: ela vale para uma máquina e uma execução.
 
 ---
 
 ## Referências
 - RFC 9562: https://www.rfc-editor.org/rfc/rfc9562.html
-- RFC 4122 (tornada obsoleta pela RFC 9562): https://www.rfc-editor.org/rfc/rfc4122
+- RFC 4122 (obsoleta pela 9562): https://www.rfc-editor.org/rfc/rfc4122
 - Cópia local para consulta offline: [`specs/rfc9562.txt`](specs/rfc9562.txt) (também em `.pdf` e `.mhtml`)

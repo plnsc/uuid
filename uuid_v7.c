@@ -1,18 +1,15 @@
 /* =============================================================================
- * UUIDv7: C implementation of RFC 9562, Section 5.7
+ * UUIDv7: C implementation of RFC 9562 §5.7
  * https://www.rfc-editor.org/rfc/rfc9562#section-5.7
- * https://datatracker.ietf.org/doc/html/rfc9562
- * https://en.wikipedia.org/wiki/Universally_unique_identifier
  *
- * Sibling implementations (uuid_v7.rb, uuid_v7.py, uuid_v7.js, uuid_v7.lua,
- * uuid_v7.rs) share the same field layout and monotonicity contract. No build
- * system and no libraries beyond libc:
+ * Siblings (uuid_v7.rb, .py, .js, .lua, .rs) share this field layout and the
+ * same monotonicity contract. No build system, no libraries beyond libc:
  *
  *   cc -std=c11 -O2 -pthread uuid_v7.c -o uuid_v7_c && ./uuid_v7_c
  *
  * Five language traits shape this implementation:
- *   * No 128-bit integer in ISO C, so the value is a pair of uint64_t. The
- *     split at the variant boundary is exact, so both halves keep whole fields
+ *   * No 128-bit integer in ISO C, so the value is a pair of uint64_t, split
+ *     exactly at the variant boundary so both halves keep whole fields
  *     (`uuidv7_assemble`).
  *   * No exceptions, so `uuidv7_decode` returns a status code and fills a
  *     caller-provided struct (`uuidv7_status`, `uuidv7_decode`).
@@ -20,12 +17,12 @@
  *     buffer of UUIDV7_SIZE bytes and nothing here allocates.
  *   * No portable mutex: C11 <threads.h> is optional and Apple's libc omits it
  *     (__STDC_NO_THREADS__), so the lock is POSIX pthreads.
- *   * No regex, no CSPRNG, and no hash table in the standard library, so the
- *     format check is hand-rolled (`uuidv7_parse`), entropy is /dev/urandom
+ *   * No regex, CSPRNG or hash table in the standard library, so the format
+ *     check is hand-rolled (`uuidv7_parse`), entropy is /dev/urandom
  *     (`uuidv7_rand_bits`), and the demo checks uniqueness with qsort.
  *
- * Together with /dev/urandom and clock_gettime, the pthreads lock makes this,
- * like uuid_v7.rs, a POSIX-only sibling.
+ * That lock, plus /dev/urandom and clock_gettime, makes this a POSIX-only
+ * sibling, as uuid_v7.rs also is.
  *
  * 128-bit field layout (big-endian, MSB first):
  *
@@ -98,8 +95,8 @@
 typedef char uuidv7_str[UUIDV7_SIZE];
 
 /* Outcome of a decode. C has no exceptions, so the three failures the siblings
- * raise become return values; uuidv7_strerror renders them with the same
- * wording those exception messages use. */
+ * raise become return values; uuidv7_strerror renders them with the same wording
+ * those exception messages use. */
 typedef enum {
     UUIDV7_OK = 0,
     UUIDV7_ERR_FORMAT = -1,  /* not 8-4-4-4-12 hex digits */
@@ -111,7 +108,7 @@ typedef enum {
 /* The fields of a UUIDv7, as filled in by uuidv7_decode.
  *
  * Member names are the RFC's own, so they stay snake_case, as in every sibling.
- * The others return a map or a struct; C gets a plain struct the caller owns,
+ * The others return a map or a struct; here it is a plain struct the caller owns,
  * which is why decode takes it as an out-parameter instead of returning it. */
 typedef struct {
     char uuid[UUIDV7_SIZE]; /* canonical lowercase UUID string */
@@ -126,10 +123,9 @@ typedef struct {
 /* Thread-safe UUIDv7 generator.
  *
  * Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
- * on each new millisecond, giving strict lexicographic ordering even within a
- * single millisecond; rand_b is always fresh random data. On counter overflow
- * (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
- * section permits.
+ * on each new millisecond, so ordering is strict even within one millisecond;
+ * rand_b is always fresh random data. On overflow (> 0xFFF) the timestamp is
+ * bumped 1 ms, the "counter rollover" that section permits.
  *
  *   uuidv7_generator gen;
  *   char out[UUIDV7_SIZE];
@@ -149,30 +145,28 @@ typedef struct {
 
 /* ── Entropy source ──────────────────────────────────────────────────────── */
 
-/* libc has no CSPRNG in ISO C, and the ones that exist are per-platform
- * (arc4random_buf on BSD, getrandom on Linux), so entropy comes straight from
- * /dev/urandom: a CSPRNG, matching Ruby's SecureRandom, Python's os.urandom,
- * JavaScript's Web Crypto, and the same device uuid_v7.rs reads.
+/* ISO C has no CSPRNG, and the ones that exist are per-platform (arc4random_buf
+ * on BSD, getrandom on Linux), so entropy comes straight from /dev/urandom: a
+ * CSPRNG, like Ruby's SecureRandom, Python's os.urandom and JavaScript's Web
+ * Crypto, and the same device uuid_v7.rs reads.
  *
- * As in every sibling, there is no fallback: rand() is not cryptographically
- * secure, so a missing device aborts the process instead of degrading silently.
- * Aborting is what a void-returning C API has in place of Rust's panic; a
- * library that must survive it should call this differently, not weaken the
- * generator.
+ * There is no fallback: rand() is not cryptographically secure, so a missing
+ * device aborts the process instead of degrading silently. Aborting is what a
+ * void-returning C API has in place of Rust's panic; a library that must survive
+ * it should call this differently, not weaken the generator.
  *
  * Draws come from a pool rather than one read per call: a read(2) of 8 bytes
  * measured ~1190 ns against ~31 ns amortized over a 4096-byte block. All six
  * siblings pool for that reason, and all six owe the same two answers:
  *
  *   * fork() duplicates the pool, so parent and child would be served the same
- *     bytes and emit identical UUIDs. That is not hypothetical here: an earlier
- *     version of this file read through a FILE *, whose stdio buffer did exactly
- *     that, and parent and child produced byte-identical UUIDs on every run.
- *     The pid is compared on every draw, at ~3 ns, and an inherited pool is
- *     dropped. Reading the fd directly also keeps stdio from adding a second
- *     buffer with no such guard.
+ *     bytes and emit identical UUIDs. Not hypothetical here: an earlier version
+ *     of this file read through a FILE *, whose stdio buffer did exactly that,
+ *     and parent and child produced byte-identical UUIDs on every run. Every
+ *     draw compares the pid, at ~3 ns, and an inherited pool is dropped. Reading
+ *     the fd directly also keeps stdio from adding a second, unguarded buffer.
  *   * the pool holds entropy not yet used, so bytes are zeroed as they are
- *     handed out, keeping the resident window to what is still unread.
+ *     handed out, keeping resident only what is still unread.
  *
  * The pool is _Thread_local, so concurrent draws need no lock of their own and
  * two threads can never be served the same bytes. */
@@ -261,16 +255,16 @@ static uint64_t uuidv7_current_ms(void)
 
 /* ── Assembly ────────────────────────────────────────────────────────────── */
 
-/* Packs all fields and writes the UUID string into `out`.
+/* Packs the fields and writes the UUID string into `out`.
  *
- * Ruby, Python, JavaScript, and Rust build one 128-bit integer; ISO C has no
- * such type (__int128 is a compiler extension, absent on MSVC), and Lua works
- * around the same gap per hex group. C splits the value in two uint64_t
- * instead, and the split is exact: the variant sits at the octet-8 boundary,
- * which is also the halfway point, so each half holds whole fields.
+ * Ruby, Python, JavaScript and Rust build one 128-bit integer; ISO C has no such
+ * type (__int128 is a compiler extension, absent on MSVC), and Lua works around
+ * the same gap per hex group. C splits the value in two uint64_t instead, and the
+ * split is exact: the variant sits at the octet-8 boundary, which is also the
+ * halfway point, so each half holds whole fields.
  *
- * Positions below count 127 as the MSB, the opposite of the RFC-style ruler in
- * the file header, which numbers bits from 0 left to right:
+ * Positions count 127 as the MSB, the opposite of the RFC-style ruler in the
+ * file header, which numbers bits from 0 left to right:
  *
  *   hi = [127..64]   unix_ts_ms (48) | ver (4) | rand_a (12)
  *   lo = [63..0]     var (2) | rand_b (62)
@@ -287,10 +281,10 @@ static uint64_t uuidv7_current_ms(void)
  * Every field is masked to its width first, so a wider argument truncates
  * instead of overflowing into its neighbour.
  *
- * The string is written nibble by nibble rather than through snprintf, which was
- * where most of this function's cost lived: snprintf parses its format string at
- * run time, and measured 245 ns of the 348 that `generate` took, against 13 ns
- * here. uuid_v7.rs dropped its two `format!` calls for the same reason.
+ * The string is written nibble by nibble rather than through snprintf, where most
+ * of this function's cost lived: snprintf parses its format string at run time,
+ * and measured 245 ns of the 348 that `generate` took, against 13 ns here.
+ * uuid_v7.rs dropped its two `format!` calls for the same reason.
  *
  * Do NOT carry this to the four interpreted siblings. There the format primitive
  * is native code and a 32-step scripted loop is not: measured 5.6x slower in Lua,
@@ -417,11 +411,11 @@ uuidv7_status uuidv7_generator_generate_bulk(uuidv7_generator *gen, size_t n,
 
 /* Value of one hex digit, or -1.
  *
- * Spelled out rather than using isxdigit/strtoull, because the <ctype.h>
- * predicates are locale-dependent and take an int that must be an unsigned char,
- * and because strtoull would accept leading whitespace, a sign, and a 0x prefix
- * that this format forbids. Accepting both letter cases matches the siblings'
- * case-insensitive patterns. */
+ * Spelled out rather than using isxdigit/strtoull: the <ctype.h> predicates are
+ * locale-dependent and take an int that must be an unsigned char, and strtoull
+ * would accept leading whitespace, a sign and a 0x prefix that this format
+ * forbids. Taking both letter cases matches the siblings' case-insensitive
+ * patterns. */
 static int uuidv7_hex_value(char c)
 {
     if (c >= '0' && c <= '9') return c - '0';
@@ -481,10 +475,10 @@ static bool uuidv7_parse(const char *uuid, uint64_t *hi, uint64_t *lo)
  * always decodes.
  *
  * out->timestamp comes from gmtime_r, which covers the whole 48-bit field on a
- * 64-bit time_t (the maximum, 10889-08-02, was checked). Where time_t is 32
- * bits, gmtime_r can fail; the member is then zeroed rather than failing the
- * decode, since the UUID itself is still valid. The Python sibling returns None
- * in the same situation, for a narrower range. */
+ * 64-bit time_t (the maximum, 10889-08-02, was checked). Where time_t is 32 bits
+ * gmtime_r can fail; the member is then zeroed rather than failing the decode,
+ * the UUID itself still being valid. The Python sibling returns None in the same
+ * situation, for a narrower range. */
 uuidv7_status uuidv7_decode(const char *uuid, uuidv7_decoded *out)
 {
     uint64_t hi, lo;
@@ -537,9 +531,9 @@ bool uuidv7_is_valid(const char *uuid)
 
 /* Message for a status code.
  *
- * Not extra API: this is where the siblings' exception messages live, the same
- * role uuid_v7.rs gives Display for DecodeError. The wording matches theirs,
- * minus the offending value, which a return code cannot carry. */
+ * Not extra API: this is where the siblings' exception messages live, the role
+ * uuid_v7.rs gives Display for DecodeError. The wording matches theirs, minus the
+ * offending value, which a return code cannot carry. */
 const char *uuidv7_strerror(uuidv7_status status)
 {
     switch (status) {
@@ -583,10 +577,10 @@ uuidv7_status uuidv7_generate_bulk(size_t n, char out[][UUIDV7_SIZE])
  * (build and run with: cc -std=c11 -O2 -pthread uuid_v7.c -o uuid_v7_c && ./uuid_v7_c)
  * =============================================================================
  *
- * C is compiled, so there is no run-time equivalent of Ruby's
- * `__FILE__ == $PROGRAM_NAME`, and like uuid_v7.rs the switch happens at build
- * time: compiling this file as-is produces the demo, while -DUUIDV7_NO_MAIN
- * leaves only the API, to be linked into another program or #included by it.
+ * Compiled, so there is no run-time equivalent of Ruby's
+ * `__FILE__ == $PROGRAM_NAME`: like uuid_v7.rs, the switch happens at build time.
+ * Compiling this file as-is produces the demo, while -DUUIDV7_NO_MAIN leaves only
+ * the API, to be linked into another program or #included by it.
  */
 #ifndef UUIDV7_NO_MAIN
 
@@ -597,9 +591,9 @@ uuidv7_status uuidv7_generate_bulk(size_t n, char out[][UUIDV7_SIZE])
 
 /* Formats a decoded timestamp as "YYYY-MM-DD HH:MM:SS.mmm UTC".
  *
- * struct tm has no sub-second member, so the milliseconds come from
- * unix_ts_ms, just as uuid_v7.lua composes its own string. This is the C
- * counterpart of JavaScript's toISOString call and Rust's utc_string. */
+ * struct tm has no sub-second member, so the milliseconds come from unix_ts_ms,
+ * just as uuid_v7.lua composes its own string. The counterpart of JavaScript's
+ * toISOString call and Rust's utc_string. */
 static void demo_format_time(const uuidv7_decoded *d, char *buf, size_t size)
 {
     char stamp[40];
@@ -619,7 +613,8 @@ static int demo_cmp(const void *a, const void *b)
 
 /* True if no string repeats. The C standard library has no hash table, so this
  * sorts a copy and compares neighbours, where Ruby uses a Set, Python and
- * JavaScript a set, Lua a table, and Rust a HashSet. */
+ * JavaScript a set, Lua a table and Rust a HashSet. The monotonicity check runs
+ * on the generated order first, so the two assertions stay independent. */
 static bool demo_all_unique(const uuidv7_str *list, size_t n)
 {
     uuidv7_str *copy = malloc(n * sizeof *copy);
@@ -785,8 +780,9 @@ int main(void)
 
     /* ── RFC 9562 Appendix A.6 test vector ───────────────────────────────── */
     printf("\n── RFC 9562 Appendix A.6 test vector ───────────────────────────────\n");
-    /* The RFC provides:  017F22E2-79B0-7CC3-98C4-DC0C0C07398F
-     * unix_ts_ms = 0x017F22E279B0 = 1645557742000  (2022-02-22T19:22:22.000Z, i.e. 2:22:22 PM GMT-05:00) */
+    /* From the RFC: 017F22E2-79B0-7CC3-98C4-DC0C0C07398F, whose
+     * unix_ts_ms = 0x017F22E279B0 = 1645557742000 (2022-02-22T19:22:22Z, printed
+     * there as 2:22:22 PM GMT-05:00) */
     uuidv7_decoded tv;
     if (uuidv7_decode("017f22e2-79b0-7cc3-98c4-dc0c0c07398f", &tv) != UUIDV7_OK) {
         fputs("demo: the A.6 vector must decode\n", stderr);

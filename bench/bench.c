@@ -2,11 +2,10 @@
  *
  *   cc -std=c11 -O2 -pthread bench/bench.c -o bench/bench_c && bench/bench_c <op> <n>
  *
- * Prints "<op> <ns per op> <checksum>". Timing happens inside the process, and
- * the corpus for the read operations is built before the clock starts. The
- * checksum is written through a volatile, so -O2 cannot drop the loops whose
- * results would otherwise be unused. bench/run.sh drives this; see
- * bench/README.md for the rules.
+ * Prints "<op> <ns per op> <checksum>". Timing is inside the process, and the
+ * corpus for the read operations is built before the clock starts. The checksum
+ * is written through a volatile, so -O2 cannot drop the loops whose results would
+ * go unused. bench/run.sh drives this; the rules are in bench/README.md.
  */
 
 #define UUIDV7_NO_MAIN

@@ -3,10 +3,10 @@
 //
 //   node bench/bench.js <op> <n>
 //
-// Prints "<op> <ns per op> <checksum>". Timing happens inside the process, so
-// startup is excluded, and the corpus for the read operations is built before the
-// clock starts. The checksum exists only so no operation can be optimized away.
-// bench/run.sh drives this; see bench/README.md for the rules.
+// Prints "<op> <ns per op> <checksum>". Timing is inside the process, so startup
+// is excluded, and the corpus for the read operations is built before the clock
+// starts. The checksum only keeps operations from being optimized away.
+// bench/run.sh drives this; the rules are in bench/README.md.
 
 "use strict";
 

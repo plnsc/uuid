@@ -2,11 +2,10 @@
 //
 //   rustc --edition 2021 -O bench/bench.rs -o bench/bench_rs && bench/bench_rs <op> <n>
 //
-// Prints "<op> <ns per op> <checksum>". Timing happens inside the process, and the
+// Prints "<op> <ns per op> <checksum>". Timing is inside the process, and the
 // corpus for the read operations is built before the clock starts. `black_box`
-// keeps the optimizer from removing calls whose results would otherwise be
-// unused, which at -O it would. bench/run.sh drives this; see bench/README.md
-// for the rules.
+// keeps the optimizer from removing calls whose results go unused, which at -O it
+// would. bench/run.sh drives this; the rules are in bench/README.md.
 
 #[path = "../uuid_v7.rs"]
 mod uuid_v7;

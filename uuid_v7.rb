@@ -1,14 +1,11 @@
 # frozen_string_literal: true
 
 # =============================================================================
-# UUIDv7: Ruby implementation of RFC 9562, Section 5.7
+# UUIDv7: Ruby implementation of RFC 9562 §5.7
 # https://www.rfc-editor.org/rfc/rfc9562#section-5.7
-# https://datatracker.ietf.org/doc/html/rfc9562
-# https://en.wikipedia.org/wiki/Universally_unique_identifier
 #
-# Sibling implementations (uuid_v7.py, uuid_v7.js, uuid_v7.lua, uuid_v7.rs,
-# uuid_v7.c)
-# share the same field layout and monotonicity contract.
+# Siblings (uuid_v7.py, .js, .lua, .rs, .c) share this field layout and the same
+# monotonicity contract.
 #
 # 128-bit field layout (big-endian, MSB first):
 #
@@ -51,24 +48,23 @@ module UUIDv7
 
   # ── Entropy pool ────────────────────────────────────────────────────────────
 
-  # SecureRandom is a CSPRNG, matching Python's os.urandom, JavaScript's Web
-  # Crypto, and the /dev/urandom that Rust and C read. Drawing a range per call
-  # measured ~1560 ns; every caller here asks for a power-of-two range, so a mask
-  # over pooled bytes is the same distribution for ~540 ns.
+  # SecureRandom is a CSPRNG, like Python's os.urandom, JavaScript's Web Crypto,
+  # and the /dev/urandom Rust and C read. Drawing a range per call measured
+  # ~1560 ns; every caller here asks for a power-of-two range, so masking pooled
+  # bytes gives the same distribution for ~540 ns.
   #
-  # All six siblings pool their entropy, and all six owe the same two answers:
+  # All six siblings pool entropy, and all six owe the same two answers:
   #
   #   * fork copies the pool, so parent and child would be served the same bytes
   #     and emit identical UUIDs. Ruby exposes no at_fork hook the way Python's
-  #     os.register_at_fork does, so the pid is compared on every draw, at ~95 ns.
-  #   * the pool holds entropy not yet used. Ruby cannot zero the bytes it hands
-  #     out the way the Python, Rust and C pools do, since byteslice copies out of
-  #     an immutable-by-convention buffer, so the whole block stays resident until
-  #     it is replaced. Lua has the same limit.
+  #     os.register_at_fork does, so every draw compares the pid, at ~95 ns.
+  #   * the pool holds entropy not yet used, and Ruby cannot zero the bytes it
+  #     hands out as Python, Rust and C do: byteslice copies out of an
+  #     immutable-by-convention buffer, so the whole block stays resident until
+  #     replaced. Lua has the same limit.
   #
-  # The pool is process-wide, so it needs its own mutex: the one inside Generator
-  # does not cover generate_random, and two threads must never be served the same
-  # bytes.
+  # The pool is process-wide and needs its own mutex: Generator's does not cover
+  # generate_random, and two threads must never be served the same bytes.
   POOL_LEN = 4096
 
   @pool       = String.new(capacity: POOL_LEN, encoding: Encoding::BINARY)
@@ -106,10 +102,9 @@ module UUIDv7
   # Thread-safe UUIDv7 generator.
   #
   # Method 2 (monotonic counter) of RFC 9562 §6.2: rand_a is a counter re-seeded
-  # on each new millisecond, giving strict lexicographic ordering even within a
-  # single millisecond; rand_b is always fresh random data. On counter overflow
-  # (> 0xFFF) the timestamp is bumped 1 ms, the "counter rollover" that same
-  # section permits.
+  # on each new millisecond, so ordering is strict even within one millisecond;
+  # rand_b is always fresh random data. On overflow (> 0xFFF) the timestamp is
+  # bumped 1 ms, the "counter rollover" that section permits.
   #
   #   gen = UUIDv7::Generator.new
   #   gen.generate  # => "018f2e39-59b7-7e82-9c3a-4d5b9e2f1a60"
@@ -183,10 +178,10 @@ module UUIDv7
       [ms, @seq, rand_b]
     end
 
-    # Packs all fields into a 128-bit integer and formats the UUID string.
+    # Packs the fields into a 128-bit integer and formats the UUID string.
     #
-    # Positions below count 127 as the MSB, the opposite of the RFC-style
-    # ruler in the file header, which numbers bits from 0 left to right:
+    # Positions count 127 as the MSB, the opposite of the RFC-style ruler in the
+    # file header, which numbers bits from 0 left to right:
     #
     #   [127..80]  unix_ts_ms   (48 bits)
     #   [79..76]   ver          ( 4 bits)  → 0b0111
@@ -194,10 +189,10 @@ module UUIDv7
     #   [63..62]   var          ( 2 bits)  → 0b10
     #   [61..0]    rand_b       (62 bits)
     #
-    # Keep +format+ here. uuid_v7.rs and uuid_v7.c emit the nibbles by hand,
-    # because their formatting libraries parse a template at run time, but Ruby's
-    # is C underneath while a 32-step loop is not: hand-rolling measured 9.7x
-    # slower (1474 ns against 14266).
+    # Keep +format+. uuid_v7.rs and uuid_v7.c emit the nibbles by hand because
+    # their formatting libraries parse a template at run time, but Ruby's is C
+    # underneath while a 32-step loop is not: hand-rolling measured 9.7x slower
+    # (14266 ns against format's 1474).
     #
     # @param unix_ts_ms [Integer] 48-bit millisecond timestamp
     # @param rand_a     [Integer] 12-bit value (counter or random)
@@ -230,11 +225,10 @@ module UUIDv7
   #   :rand_b      [Integer] 62-bit rand_b field value
   # @raise [ArgumentError] if the format, version, or variant is invalid
   def self.decode(uuid)
-    # The type check comes first for the same reason Python, JavaScript, and Lua
+    # The type check comes first for the same reason Python, JavaScript and Lua
     # open with theirs: without it a non-String reaches #match? and raises
-    # NoMethodError, which +valid?+ does not rescue, turning the predicate into
-    # a raising method instead of an answer. Rust and C get this from their
-    # signatures.
+    # NoMethodError, which +valid?+ does not rescue, turning the predicate into a
+    # raising method instead of an answer. Rust and C get it from their signatures.
     raise ArgumentError, "Invalid UUID format: #{uuid.inspect}" \
       unless uuid.is_a?(String) && uuid.match?(UUID_REGEX)
 
@@ -371,8 +365,9 @@ if __FILE__ == $PROGRAM_NAME
 
   # ── RFC 9562 Appendix A.6 test vector ─────────────────────────────────────
   puts "\n── RFC 9562 Appendix A.6 test vector ───────────────────────────────"
-  # The RFC provides:  017F22E2-79B0-7CC3-98C4-DC0C0C07398F
-  # unix_ts_ms = 0x017F22E279B0 = 1645557742000  (2022-02-22T19:22:22.000Z, i.e. 2:22:22 PM GMT-05:00)
+  # From the RFC: 017F22E2-79B0-7CC3-98C4-DC0C0C07398F, whose
+  # unix_ts_ms = 0x017F22E279B0 = 1645557742000 (2022-02-22T19:22:22Z, printed
+  # there as 2:22:22 PM GMT-05:00)
   test_vec = "017f22e2-79b0-7cc3-98c4-dc0c0c07398f"
   tv = UUIDv7.decode(test_vec)
   puts "  UUID:        #{tv[:uuid]}"
